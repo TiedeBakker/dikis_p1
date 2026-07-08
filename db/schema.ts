@@ -13,19 +13,20 @@ export const objectTypen = sqliteTable("object_typen", {
 
 // Gestandaardiseerde eenheden (bijv: 'celsius', 'millimeter', 'euro')
 export const eenheden = sqliteTable("eenheden", {
-  id: text("id").primaryKey(), 
+  id: text("id").primaryKey(),
   symbool: text("symbool").notNull(), // '°C', 'mm', '€'
   omschrijving: text("omschrijving").notNull(), // 'Graden Celsius'
 });
 
 // Alle mogelijke parameters/kenmerken in het systeem
 export const parameterDefinities = sqliteTable("parameter_definities", {
-  id: text("id").primaryKey(), // snake_case: 'temperatuur', 'determinatie_door'
+  id: text("id").primaryKey(),
   naam: text("naam").notNull(),
-  dataType: text("data_type", { enum: ["tekst", "numeriek", "keuzelijst"] }).notNull(),
-  eenheidId: text("eenheid_id").references(() => eenheden.id), // NU VIA HULPTABEL
-  keuzeOpties: text("keuze_opties"), // JSON string voor keuzelijsten
+  // Voeg hier 'datum' toe aan de enum-smaken:
+  dataType: text("data_type", { enum: ["tekst", "numeriek", "keuzelijst", "datum"] }).notNull(),
+  eenheidId: text("eenheid_id").references(() => eenheden.id),
   helpTekst: text("help_tekst"),
+  keuzeOpties: text("keuze_opties"), // JSON-array voor keuzelijst
 });
 
 // Relatietypen tussen objecten (bijv: 'fysiek_onderdeel_van', 'huwelijk_met', 'beheerd_door')
@@ -93,7 +94,7 @@ export const metingen = sqliteTable("metingen", {
   id: text("id").primaryKey().$defaultFn(() => uuidv4()),
   objectId: text("object_id").notNull().references(() => objecten.id), // Kan ook een relatie-id zijn indien gewenst via flexibele query, of we maken een aparte tabel voor relatie-metingen. Laten we het hier puur op objecten houden.
   parameterId: text("parameter_id").notNull().references(() => parameterDefinities.id),
-  waarde: text("waarde").notNull(), 
-  tijdstipUtc: text("tijdstip_utc").notNull(), 
+  waarde: text("waarde").notNull(),
+  tijdstipUtc: text("tijdstip_utc").notNull(),
   ingevoerdDoorObjectId: text("ingevoerd_by_object_id").references(() => objecten.id), // NU HARD LINK NAAR EEN OBJECT (Inspecteur)
 });

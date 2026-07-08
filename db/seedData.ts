@@ -3,6 +3,7 @@ export const SEED_EENHEDEN = [
   { id: "millimeter", symbool: "mm", omschrijving: "Millimeter" },
   { id: "euro", symbool: "€", omschrijving: "Euro" },
   { id: "percentage", symbool: "%", omschrijving: "Percentage" },
+  { id: "uren", symbool: "u", omschrijving: "Uren" },
 ];
 
 export const SEED_OBJECT_TYPEN = [

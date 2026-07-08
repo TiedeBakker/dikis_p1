@@ -9,6 +9,7 @@ const MENU_ITEMS = [
     { label: "Objectbeheer", href: "/objecten" },
     { label: "Parameters & Sets", href: "/parameters" },
     { label: "Basistabellen", href: "/basistabellen" },
+    { label: "Registratie", href: "/registratie" },
     { label: "Koppelingen", href: "/koppelingen" },
 ];
 
@@ -44,8 +45,8 @@ export default function Navigation() {
                                         href={item.href}
                                         onClick={() => setIsOpen(false)}
                                         className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive
-                                                ? "bg-blue-600 text-white"
-                                                : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                                            ? "bg-blue-600 text-white"
+                                            : "text-slate-300 hover:bg-slate-800 hover:text-white"
                                             }`}
                                     >
                                         {item.label}
