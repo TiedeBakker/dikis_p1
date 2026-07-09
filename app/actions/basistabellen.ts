@@ -40,6 +40,7 @@ export async function createBasistabelItemAction(tabel: "object" | "relatie" | "
   const id = formData.get("id") as string;
   const omschrijving = formData.get("omschrijving") as string;
   const symbool = formData.get("symbool") as string || ""; // Vang het symbool op
+  const toelichting = formData.get("toelichting") as string || ""; // Vang de toelichting op
 
   if (!id || !omschrijving) {
     return { success: false, message: "Code (ID) en Omschrijving zijn verplicht." };
@@ -53,9 +54,9 @@ export async function createBasistabelItemAction(tabel: "object" | "relatie" | "
 
   try {
     if (tabel === "object") {
-      await db.insert(objectTypen).values({ id: cleanId, omschrijving });
+      await db.insert(objectTypen).values({ id, omschrijving, toelichting });
     } else if (tabel === "relatie") {
-      await db.insert(relatieTypen).values({ id: cleanId, omschrijving });
+      await db.insert(relatieTypen).values({ id, omschrijving, toelichting });
     } else if (tabel === "eenheid") {
       // TypeScript is nu blij, want symbool wordt meegeleverd!
       await db.insert(eenheden).values({ id: cleanId, omschrijving, symbool });
@@ -70,12 +71,13 @@ export async function createBasistabelItemAction(tabel: "object" | "relatie" | "
 }
 // --- 3. WIJZIGEN DATA ---
 export async function updateBasistabelItemAction(
-  tabel: "object" | "relatie" | "eenheid", 
-  id: string, 
+  tabel: "object" | "relatie" | "eenheid",
+  id: string,
   formData: FormData
 ) {
   const omschrijving = formData.get("omschrijving") as string;
   const symbool = formData.get("symbool") as string || "";
+  const toelichting = formData.get("toelichting") as string || "";
 
   if (!omschrijving) {
     return { success: false, message: "Omschrijving is verplicht." };
@@ -87,9 +89,9 @@ export async function updateBasistabelItemAction(
 
   try {
     if (tabel === "object") {
-      await db.update(objectTypen).set({ omschrijving }).where(eq(objectTypen.id, id));
+      await db.update(objectTypen).set({ omschrijving, toelichting }).where(eq(objectTypen.id, id));
     } else if (tabel === "relatie") {
-      await db.update(relatieTypen).set({ omschrijving }).where(eq(relatieTypen.id, id));
+      await db.update(relatieTypen).set({ omschrijving, toelichting }).where(eq(relatieTypen.id, id));
     } else if (tabel === "eenheid") {
       await db.update(eenheden).set({ omschrijving, symbool }).where(eq(eenheden.id, id));
     }

@@ -9,8 +9,8 @@ import { v4 as uuidv4 } from "uuid";
 export const objectTypen = sqliteTable("object_typen", {
   id: text("id").primaryKey(), // snake_case
   omschrijving: text("omschrijving").notNull(),
+  toelichting: text("toelichting"), // NIEUW: Optionele uitgebreide documentatie
 });
-
 // Gestandaardiseerde eenheden (bijv: 'celsius', 'millimeter', 'euro')
 export const eenheden = sqliteTable("eenheden", {
   id: text("id").primaryKey(),
@@ -33,7 +33,8 @@ export const parameterDefinities = sqliteTable("parameter_definities", {
 export const relatieTypen = sqliteTable("relatie_typen", {
   id: text("id").primaryKey(), // snake_case
   omschrijving: text("omschrijving").notNull(),
-  omgekeerdeOmschrijving: text("omgekeerde_omschrijving"), // Bijv: 'heeft_onderdeel' vs 'is_onderdeel_van'
+  omgekeerdeOmschrijving: text("omgekeerde_omschrijving"),
+  toelichting: text("toelichting"), // NIEUW: Optionele uitgebreide documentatie
 });
 
 // =========================================================================

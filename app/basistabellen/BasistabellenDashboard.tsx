@@ -12,6 +12,7 @@ interface SelectedItem {
   id: string;
   omschrijving: string;
   symbool?: string;
+  toelichting?: string; // STAP 1: Uitbreiding type
 }
 
 export default function BasistabellenDashboard({ initialData }: Props) {
@@ -22,12 +23,10 @@ export default function BasistabellenDashboard({ initialData }: Props) {
   const [actieveTabel, setActieveTabel] = useState<"object" | "relatie" | "eenheid">("object");
   const [feedback, setFeedback] = useState<{ success: boolean; message: string } | null>(null);
   
-  // State voor het geselecteerde item dat bewerkt wordt
   const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
 
   useEffect(() => { setData(initialData); }, [initialData]);
 
-  // Live zoekopdracht debouncen
   useEffect(() => {
     const delayDebounce = setTimeout(async () => {
       const gefilterd = await getBasistabellenData(zoekterm);
@@ -36,7 +35,7 @@ export default function BasistabellenDashboard({ initialData }: Props) {
     return () => clearTimeout(delayDebounce);
   }, [zoekterm]);
 
-  // Als we een item selecteren om te bewerken, zetten we de dropdown ook direct op de juiste tabel
+  // STAP 2: handleSelectEdit aangepast om toelichting over te nemen
   const handleSelectEdit = (tabel: "object" | "relatie" | "eenheid", item: any) => {
     setFeedback(null);
     setActieveTabel(tabel);
@@ -44,7 +43,8 @@ export default function BasistabellenDashboard({ initialData }: Props) {
       tabel,
       id: item.id,
       omschrijving: item.omschrijving,
-      symbool: item.symbool || ""
+      symbool: item.symbool || "",
+      toelichting: item.toelichting || "" 
     });
   };
 
@@ -59,17 +59,15 @@ export default function BasistabellenDashboard({ initialData }: Props) {
     startTransition(async () => {
       let res;
       if (selectedItem) {
-        // Wijzigen van bestaand item
         res = await updateBasistabelItemAction(selectedItem.tabel, selectedItem.id, formData);
       } else {
-        // Aanmaken van nieuw item
         res = await createBasistabelItemAction(actieveTabel, formData);
       }
       
       setFeedback(res);
       if (res.success) {
         if (!selectedItem) formRef.current?.reset();
-        setSelectedItem(null); // Reset edit mode na succes
+        setSelectedItem(null);
         const geupdate = await getBasistabellenData(zoekterm);
         setData(geupdate);
       }
@@ -102,13 +100,12 @@ export default function BasistabellenDashboard({ initialData }: Props) {
           )}
         </div>
 
-        {/* We gebruiken key={selectedItem?.id} om het formulier hard te resetten/vullen bij een nieuwe selectie */}
         <form ref={formRef} key={selectedItem?.id || actieveTabel} action={handleSubmit} className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
           <div className="sm:col-span-3">
             <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Kies Tabel</label>
             <select
               value={actieveTabel}
-              disabled={!!selectedItem} // Tabel mag niet gewijzigd worden tijdens edit
+              disabled={!!selectedItem} 
               onChange={(e) => { setActieveTabel(e.target.value as any); setFeedback(null); }}
               className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm h-10 focus:outline-none disabled:bg-slate-200 disabled:text-slate-500"
             >
@@ -123,7 +120,7 @@ export default function BasistabellenDashboard({ initialData }: Props) {
             <input 
               type="text" 
               name="id" 
-              disabled={!!selectedItem} // ID/Code mag NOOIT veranderen
+              disabled={!!selectedItem} 
               defaultValue={selectedItem?.id || ""}
               required 
               placeholder="mm, cm, heeft_laag" 
@@ -142,13 +139,28 @@ export default function BasistabellenDashboard({ initialData }: Props) {
               <input type="text" name="symbool" defaultValue={selectedItem?.symbool || ""} required={actieveTabel === "eenheid"} placeholder="Bijv: mm" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm h-10 focus:outline-none" />
             </div>
           )}
+
+          {/* STAP 3: TEXTAREA VOOR OBJECT- EN RELATIETYPEN (Verberg bij meeteenheden) */}
+          {actieveTabel !== "eenheid" && (
+            <div className="sm:col-span-12 mt-1">
+              <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Toelichting / Richtlijn voor gebruik</label>
+              <textarea 
+                name="toelichting" 
+                defaultValue={selectedItem?.toelichting || ""} 
+                placeholder="Beschrijf hier de betekenis en de kaders voor het gebruik van dit type..." 
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm h-16 focus:outline-none focus:border-blue-500 resize-y"
+              />
+            </div>
+          )}
           
-          <div className="sm:col-span-2">
-            <button type="submit" disabled={isPending} className={`w-full text-white font-medium text-sm rounded-lg h-10 transition-colors ${selectedItem ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"}`}>
+          {/* De knop staat nu stabiel op de volledige breedte eronder */}
+          <div className="sm:col-span-12 mt-2 sm:flex sm:justify-end">
+            <button type="submit" disabled={isPending} className={`w-full sm:w-48 text-white font-medium text-sm rounded-lg h-10 transition-colors ${selectedItem ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"}`}>
               {isPending ? "Verwerken..." : selectedItem ? "Wijzigen" : "Opslaan"}
             </button>
           </div>
         </form>
+
         {feedback && (
           <div className={`mt-3 p-2 rounded-lg text-xs font-medium ${feedback.success ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
             {feedback.message}
@@ -156,7 +168,7 @@ export default function BasistabellenDashboard({ initialData }: Props) {
         )}
       </div>
 
-      {/* 3. DRIE KOLOMMEN OVERZICHT (MET ONCLICK SELECTION) */}
+      {/* 3. DRIE KOLOMMEN OVERZICHT */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* KOLOM 1: OBJECT TYPEN */}
@@ -176,6 +188,12 @@ export default function BasistabellenDashboard({ initialData }: Props) {
                 >
                   <span className="font-bold text-slate-800">{t.omschrijving}</span>
                   <span className="font-mono text-[10px] text-slate-400">code: {t.id}</span>
+                  {/* STAP 4: Subtiele preview van de documentatie */}
+                  {t.toelichting && (
+                    <p className="text-[11px] text-slate-500 italic mt-0.5 border-l-2 border-slate-200 pl-1.5 line-clamp-2">
+                      {t.toelichting}
+                    </p>
+                  )}
                 </div>
               );
             })}
@@ -199,13 +217,19 @@ export default function BasistabellenDashboard({ initialData }: Props) {
                 >
                   <span className="font-bold text-slate-800">{r.omschrijving}</span>
                   <span className="font-mono text-[10px] text-slate-400">code: {r.id}</span>
+                  {/* STAP 4: Subtiele preview van de documentatie */}
+                  {r.toelichting && (
+                    <p className="text-[11px] text-slate-500 italic mt-0.5 border-l-2 border-slate-200 pl-1.5 line-clamp-2">
+                      {r.toelichting}
+                    </p>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* KOLOM 3: MEETWEENHEDEN */}
+        {/* KOLOM 3: MEETWEENHEDEN (Onveranderd) */}
         <div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3 shadow-sm">
           <div className="flex justify-between items-center border-b pb-2">
             <h4 className="font-bold text-sm text-slate-900">📐 Meeteenheden</h4>
