@@ -6,12 +6,13 @@ import { getFormulierVeldenVoorSet, createWaarnemingenAction, getWaarnemingenHis
 import { searchObjectenAction } from "@/app/actions/objecten";
 
 interface Props {
+  objecten: any[];
   sets: any[];
   alleParameters: any[];
   initialHistorie: any[];
 }
 
-export default function RegistratieDashboard({ sets, alleParameters, initialHistorie }: Props) {
+export default function RegistratieDashboard({ objecten, sets, alleParameters, initialHistorie }: Props) {
   const formRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
   const [historie, setHistorie] = useState(initialHistorie);

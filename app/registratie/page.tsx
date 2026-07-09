@@ -1,3 +1,4 @@
+//app/registratie/page.tsx
 import { db } from "@/db";
 import { objecten, parameterSets } from "@/db/schema";
 import { asc } from "drizzle-orm";

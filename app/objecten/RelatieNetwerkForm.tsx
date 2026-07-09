@@ -8,11 +8,12 @@ interface RelatieType { id: string; omschrijving: string; }
 interface ObjectType { id: string; omschrijving: string; }
 
 interface Props {
+  objecten: any[];
   relatieTypen: RelatieType[];
   objectTypen: ObjectType[];
 }
 
-export default function RelatieNetwerkForm({ relatieTypen, objectTypen }: Props) {
+export default function RelatieNetwerkForm({ objecten,relatieTypen, objectTypen }: Props) {
   const singleFormRef = useRef<HTMLFormElement>(null);
   const bulkFormRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
