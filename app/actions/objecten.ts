@@ -1,10 +1,11 @@
+// app/actions/objecten.ts
 "use server";
 
 import { db } from "@/db";
 import { objecten, objectTypen } from "@/db/schema";
 import { revalidatePath } from "next/cache";
 import { objectRelaties, relatieTypen } from "@/db/schema";
-import { eq, and, asc, desc, like, isNull } from "drizzle-orm";
+import { eq, and, asc, desc, like, isNull, or } from "drizzle-orm";
 
 // 1. Haal alle beschikbare objecttypen op (voor het aanmaakformulier)
 export async function getObjectTypen() {
@@ -289,5 +290,25 @@ export async function createBulkChildrenAction(formData: FormData) {
   } catch (error) {
     console.error("Bulk aanmaak fout:", error);
     return { success: false, message: "Fout tijdens bulk-transactie in de database." };
+  }
+}
+export async function searchObjectenAction(zoekterm: string) {
+  if (!zoekterm || zoekterm.trim().length < 2) return [];
+
+  try {
+    return await db
+      .select()
+      .from(objecten)
+      .where(
+        or(
+          like(objecten.weergaveNaam, `%${zoekterm}%`),
+          like(objecten.id, `%${zoekterm}%`)
+        )
+      )
+      .orderBy(asc(objecten.weergaveNaam))
+      .limit(20); // Limiet is hier GOED, want het is het resultaat v/d zoekopdracht
+  } catch (error) {
+    console.error("Fout bij zoeken van objecten:", error);
+    return [];
   }
 }

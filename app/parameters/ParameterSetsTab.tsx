@@ -1,20 +1,43 @@
+//app/parameters/ParameterSetsTab.tsx
 "use client";
 
 import { useRef, useTransition, useState, useEffect } from "react";
-import { createParameterSetAction, linkParameterToSetAction, getParameterSetLijnen } from "@/app/actions/parameters";
+import { createParameterSetAction, linkParameterToSetAction, getParameterSetLijnen, getParameterDefinities } from "@/app/actions/parameters";
 
 interface Props {
   sets: any[];
-  definities: any[];
+  initialDefinities: any[]; // Hernoemd om verwarring te voorkomen
 }
 
-export default function ParameterSetsTab({ sets, definities }: Props) {
+export default function ParameterSetsTab({ sets, initialDefinities }: Props) {
   const setFormRef = useRef<HTMLFormElement>(null);
   const lineFormRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
   const [selectedSetId, setSelectedSetId] = useState<string>("");
   const [setLijnen, setSetLijnen] = useState<any[]>([]);
   const [feedback, setFeedback] = useState<{ success: boolean; message: string } | null>(null);
+  
+  // State voor de actuele lijst van definities en de zoekterm
+  const [definities, setDefinities] = useState<any[]>(initialDefinities);
+  const [searchTerm, setSearchTerm] = useState<string>("");
+
+  // Update definities als de initialDefinities vanuit de server component veranderen
+  useEffect(() => {
+    setDefinities(initialDefinities);
+  }, [initialDefinities]);
+
+  // Haal live data op van de server wanneer de gebruiker typt
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      startTransition(async () => {
+        // We roepen hier de Server Action aan met de zoekterm
+        const data = await getParameterDefinities({ zoekterm: searchTerm });
+        setDefinities(data);
+      });
+    }, 300); // 300ms debounce om de database te sparen tijdens het typen
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
 
   // Laad de gekoppelde parameters zodra een set geselecteerd is
   useEffect(() => {
@@ -41,7 +64,7 @@ export default function ParameterSetsTab({ sets, definities }: Props) {
       setFeedback(res);
       if (res.success) {
         lineFormRef.current?.reset();
-        // Ververs direct de lijnen in beeld
+        setSearchTerm(""); // Reset zoekterm
         getParameterSetLijnen(selectedSetId).then(setSetLijnen);
       }
     });
@@ -98,30 +121,43 @@ export default function ParameterSetsTab({ sets, definities }: Props) {
             </div>
 
             {/* Formulier om parameter toe te voegen aan actieve set */}
-            <form ref={lineFormRef} action={handleLinkParameter} className="bg-slate-50 border p-3 rounded-xl grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <form ref={lineFormRef} action={handleLinkParameter} className="bg-slate-50 border p-3 rounded-xl space-y-3">
               <input type="hidden" name="parameterSetId" value={selectedSetId} />
               
-              <div className="sm:col-span-2">
-                <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Kies Parameter om toe te voegen</label>
-                <select name="parameterId" required className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs h-9 focus:outline-none">
-                  <option value="">-- Kies parameter --</option>
-                  {definities.map((d) => (
-                    <option key={d.id} value={d.id}>{d.naam} ({d.dataType})</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label className="block text-[11px] font-semibold text-slate-700 uppercase">Kies Parameter om toe te voegen</label>
+                  
+                  <input 
+                    type="text" 
+                    placeholder="Typ om op de server te zoeken..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs h-8 focus:outline-none placeholder:text-slate-400"
+                  />
+                  
+                  <select name="parameterId" required className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs h-9 focus:outline-none">
+                    <option value="">
+                      {definities.length === 0 ? "-- Geen parameters gevonden --" : `-- Kies uit getoonde resultaten --`}
+                    </option>
+                    {definities.map((d) => (
+                      <option key={d.id} value={d.id}>{d.naam} ({d.dataType})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Volgorde Index</label>
+                  <input type="number" name="volgorde" defaultValue={(setLijnen.length + 1) * 10} className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs h-9 focus:outline-none" />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Volgorde Index</label>
-                <input type="number" name="volgorde" defaultValue={(setLijnen.length + 1) * 10} className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs h-9 focus:outline-none" />
-              </div>
-
-              <button type="submit" disabled={isPending} className="sm:col-span-3 w-full bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg h-9 transition-colors">
+              <button type="submit" disabled={isPending} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg h-9 transition-colors">
                 Voeg Parameter Toe aan Set
               </button>
             </form>
 
-            {/* Overzicht van de lijnen/velden in de set */}
+            {/* Gekoppelde velden */}
             <div>
               <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2">Gekoppelde Velden in dit formulier</h4>
               {setLijnen.length === 0 ? (

@@ -40,7 +40,7 @@ export default function ParametersMainTabs({ definities, sets, eenheden }: Props
         {activeTab === "definities" ? (
           <ParameterDefinitiesTab definities={definities} eenheden={eenheden} />
         ) : (
-          <ParameterSetsTab sets={sets} definities={definities} />
+          <ParameterSetsTab sets={sets} initialDefinities={definities} />
         )}
       </div>
     </div>

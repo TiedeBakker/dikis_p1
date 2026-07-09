@@ -1,3 +1,4 @@
+// app/objecten/ObjectenLijstEnForm.tsx
 "use client";
 
 import { useRef, useTransition, useState, useEffect } from "react";
@@ -157,7 +158,7 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                             ) : (
                                 hierarchie.ouders.map((o) => (
                                     <div key={o.relatieId} className="text-xs py-1 text-slate-300">
-                                        <span className="font-bold text-white">{o.ouderNa5m}</span> ({o.ouderType})
+                                        <span className="font-bold text-white">{o.ouderNaam}</span> ({o.ouderType})
                                         <span className="text-blue-400 block text-[10px]">↳ {o.relatieType} (volgorde: {o.volgorde})</span>
                                     </div>
                                 ))

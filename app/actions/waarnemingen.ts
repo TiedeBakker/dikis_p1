@@ -3,13 +3,13 @@
 import { db } from "@/db";
 // Geüpdatet naar 'metingen' uit je schema
 import { metingen, parameterSetLijnen, parameterDefinities } from "@/db/schema";
-import { eq, asc, desc } from "drizzle-orm";
+import { eq, asc, desc, and, inArray, lte } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 // 1. Haal de formulier-velden (parameters) op die bij een specifieke set horen
 export async function getFormulierVeldenVoorSet(parameterSetId: string) {
   if (!parameterSetId) return [];
-  
+
   return await db
     .select({
       parameterId: parameterSetLijnen.parameterId,
@@ -29,24 +29,29 @@ export async function getFormulierVeldenVoorSet(parameterSetId: string) {
 // 2. Sla een batch aan metingen op in de juiste tabel
 export async function createWaarnemingenAction(
   objectId: string,
-  fieldsData: { parameterId: string; waarde: string }[]
+  fieldsData: { parameterId: string; waarde: string }[],
+  handmatigTijdstip?: string // Derde optionele parameter toegevoegd
 ) {
   if (!objectId || fieldsData.length === 0) {
     return { success: false, message: "Object en ingevulde velden zijn verplicht." };
   }
 
   try {
-    const nuUtc = new Date().toISOString();
+    // Als er een handmatig tijdstip is meegegeven, converteren we dit naar UTC.
+    // Zo niet, dan gebruiken we de huidige tijd (fallback).
+    const tijdstipUtc = handmatigTijdstip
+      ? new Date(handmatigTijdstip).toISOString()
+      : new Date().toISOString();
 
     // Mapping naar de exacte tabel 'metingen' en kolom 'tijdstipUtc'
     const insertValues = fieldsData
-      .filter(f => f.waarde !== undefined && f.waarde !== "") 
+      .filter(f => f.waarde !== undefined && f.waarde !== "")
       .map(f => ({
         objectId,
         parameterId: f.parameterId,
         waarde: f.waarde,
-        tijdstipUtc: nuUtc, // Exact conform schema
-        // ingevoerdDoorObjectId: ... (kunnen we later vullen als we authenticatie/sessies linken aan een object)
+        tijdstipUtc: tijdstipUtc, // Gebruikt nu het (historische) dynamische tijdstip
+        // ingevoerdDoorObjectId: ...
       }));
 
     if (insertValues.length === 0) {
@@ -63,7 +68,6 @@ export async function createWaarnemingenAction(
     return { success: false, message: "Databasefout bij het opslaan van de metingen." };
   }
 }
-
 // 3. Haal de laatste metingen historie op
 export async function getWaarnemingenHistorie(objectId?: string) {
   try {
@@ -112,3 +116,54 @@ export async function getAlleParameterDefinities() {
     return [];
   }
 }
+
+
+// Geüpdatete versie van de action:
+export async function getLaatsteWaardenVoorObjectAction(
+  objectId: string,
+  parameterIds: string[],
+  totTijdstipUtc?: string // <-- NIEUW: Optionele tijdsgrens
+) {
+  if (!objectId || parameterIds.length === 0) return {};
+
+  try {
+    // Basisvoorwaarden (object en parameters)
+    const conditions = [
+      eq(metingen.objectId, objectId),
+      inArray(metingen.parameterId, parameterIds)
+    ];
+
+    // NIEUW: Als er een tijdsgrens is meegegeven, kijken we alleen naar metingen
+    // die VÓÓR of EXACT op dat moment zijn gedaan.
+    if (totTijdstipUtc) {
+      conditions.push(lte(metingen.tijdstipUtc, totTijdstipUtc));
+    }
+
+    const resultaten = await db
+      .select({
+        parameterId: metingen.parameterId,
+        waarde: metingen.waarde,
+        tijdstipUtc: metingen.tijdstipUtc,
+      })
+      .from(metingen)
+      .where(and(...conditions)) // dynamically spread de condities
+      .orderBy(desc(metingen.tijdstipUtc));
+
+    const laatsteWaardenMap: Record<string, { waarde: string; tijdstipUtc: string }> = {};
+    
+    for (const meting of resultaten) {
+      if (!laatsteWaardenMap[meting.parameterId]) {
+        laatsteWaardenMap[meting.parameterId] = {
+          waarde: meting.waarde,
+          tijdstipUtc: meting.tijdstipUtc,
+        };
+      }
+    }
+
+    return laatsteWaardenMap;
+  } catch (error) {
+    console.error("Fout bij ophalen laatste waarden:", error);
+    return {};
+  }
+}
+

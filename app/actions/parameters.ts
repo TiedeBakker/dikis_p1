@@ -1,3 +1,4 @@
+// app/actions/parameters.ts
 "use server";
 
 import { db } from "@/db";
@@ -34,7 +35,8 @@ export async function getParameterDefinities(filters?: {
       query = query.where(and(...conditions));
     }
 
-    return await query.orderBy(asc(parameterDefinities.naam)).limit(20);
+   // return await query.orderBy(asc(parameterDefinities.naam)).limit(20);
+    return await query.orderBy(asc(parameterDefinities.naam));
   } catch (error) {
     console.error("Fout bij ophalen parameters:", error);
     return [];
