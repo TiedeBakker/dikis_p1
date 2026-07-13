@@ -80,14 +80,16 @@ export const objecten = sqliteTable("objecten", {
 });
 
 // Het Netwerk / De Edges (Met eigen ID, tijdlijnen en metadata-type)
+
 export const objectRelaties = sqliteTable("object_relaties", {
-  id: text("id").primaryKey().$defaultFn(() => uuidv4()), // EIGEN ID VOOR SUB-KENMERKEN
+  id: text("id").primaryKey().$defaultFn(() => uuidv4()),
   vanObjectId: text("van_object_id").notNull().references(() => objecten.id),
   naarObjectId: text("naar_object_id").notNull().references(() => objecten.id),
-  relatieTypeId: text("relatie_type_id").notNull().references(() => relatieTypen.id), // NU VIA HULPTABEL
+  relatieTypeId: text("relatie_type_id").notNull().references(() => relatieTypen.id),
   volgorde: integer("volgorde").notNull().default(0),
-  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()), // TIJDLIJN START
-  validUntil: text("valid_until"), // TIJDLIJN EIND (Null = voor altijd/actueel)
+  toelichting: text("toelichting"), // <-- VOEG DEZE TOE VOOR AD-HOC OPMERKINGEN
+  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  validUntil: text("valid_until"),
 });
 
 // EAV / De Waarden

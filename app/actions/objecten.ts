@@ -158,6 +158,7 @@ export async function updateObjectAction(id: string, formData: FormData) {
 }
 
 // 7. Haal de actuele hiërarchie op (filter op validUntil is NULL)
+// PAS NU HIERARCHIE AAN (Zodat createdAt, validUntil en toelichting worden meegegeven)
 export async function getObjectHierarchie(objectId: string) {
   try {
     const ouders = await db
@@ -168,6 +169,9 @@ export async function getObjectHierarchie(objectId: string) {
         ouderId: objecten.id,
         ouderNaam: objecten.weergaveNaam,
         ouderType: objecten.type,
+        createdAt: objectRelaties.createdAt,     // <-- NIEUW
+        validUntil: objectRelaties.validUntil,   // <-- NIEUW
+        toelichting: objectRelaties.toelichting, // <-- NIEUW
       })
       .from(objectRelaties)
       .innerJoin(objecten, eq(objectRelaties.vanObjectId, objecten.id))
@@ -175,7 +179,7 @@ export async function getObjectHierarchie(objectId: string) {
       .where(
         and(
           eq(objectRelaties.naarObjectId, objectId),
-          isNull(objectRelaties.validUntil) // <-- Alleen actuele relaties
+          isNull(objectRelaties.validUntil)
         )
       );
 
@@ -187,6 +191,9 @@ export async function getObjectHierarchie(objectId: string) {
         kindId: objecten.id,
         kindNaam: objecten.weergaveNaam,
         kindType: objecten.type,
+        createdAt: objectRelaties.createdAt,     // <-- NIEUW
+        validUntil: objectRelaties.validUntil,   // <-- NIEUW
+        toelichting: objectRelaties.toelichting, // <-- NIEUW
       })
       .from(objectRelaties)
       .innerJoin(objecten, eq(objectRelaties.naarObjectId, objecten.id))
@@ -194,7 +201,7 @@ export async function getObjectHierarchie(objectId: string) {
       .where(
         and(
           eq(objectRelaties.vanObjectId, objectId),
-          isNull(objectRelaties.validUntil) // <-- Alleen actuele relaties
+          isNull(objectRelaties.validUntil)
         )
       )
       .orderBy(asc(objectRelaties.volgorde));
@@ -310,5 +317,36 @@ export async function searchObjectenAction(zoekterm: string) {
   } catch (error) {
     console.error("Fout bij zoeken van objecten:", error);
     return [];
+  }
+}
+
+// Voeg deze action toe (bijvoorbeeld onder nummer 9 of 10)
+export async function updateRelatieDetailsAction(
+  relatieId: string,
+  formData: FormData
+) {
+  const createdAt = formData.get("createdAt") as string;
+  const validUntilRaw = formData.get("validUntil") as string;
+  const toelichting = formData.get("toelichting") as string;
+
+  if (!createdAt) {
+    return { success: false, message: "Aanmaakdatum is verplicht." };
+  }
+
+  try {
+    await db
+      .update(objectRelaties)
+      .set({
+        createdAt: new Date(createdAt).toISOString(),
+        validUntil: validUntilRaw ? new Date(validUntilRaw).toISOString() : null,
+        toelichting: toelichting || null,
+      })
+      .where(eq(objectRelaties.id, relatieId));
+
+    revalidatePath("/objecten");
+    return { success: true, message: "Relatie succesvol bijgewerkt!" };
+  } catch (error) {
+    console.error("Fout bij updaten relatie details:", error);
+    return { success: false, message: "Databasefout bij bijwerken relatie." };
   }
 }

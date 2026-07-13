@@ -2,7 +2,15 @@
 "use client";
 
 import { useRef, useTransition, useState, useEffect } from "react";
-import { createObjectAction, updateObjectAction, getObjectHierarchie, getObjecten, updateRelatieVolgordeAction, terminateRelatieAction } from "@/app/actions/objecten";
+import { 
+  createObjectAction, 
+  updateObjectAction, 
+  getObjectHierarchie, 
+  getObjecten, 
+  updateRelatieVolgordeAction, 
+  terminateRelatieAction,
+  updateRelatieDetailsAction // <-- NIEUW
+} from "@/app/actions/objecten";
 
 interface ObjectType { id: string; omschrijving: string; }
 interface SysteemObject { id: string; type: string; weergaveNaam: string; createdAt: string; }
@@ -20,41 +28,41 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
     // State voor selectie & bewerken
     const [selectedObject, setSelectedObject] = useState<SysteemObject | null>(null);
     const [hierarchie, setHierarchie] = useState<{ ouders: any[]; kinderen: any[] }>({ ouders: [], kinderen: [] });
+    
+    // NIEUW: State voor het bewerken van een specifieke relatie via Double Click
+    const [editingRelatie, setEditingRelatie] = useState<any | null>(null);
+
     // Dynamische lijst die reageert op filters
     const [filteredObjecten, setFilteredObjecten] = useState<SysteemObject[]>(initialObjecten);
     const [zoekterm, setZoekterm] = useState("");
     const [filterType, setFilterType] = useState("");
 
-    // Update de lijst als de initiële data van de server verandert (bijv. na toevoegen/bewerken)
     useEffect(() => {
         setFilteredObjecten(initialObjecten);
     }, [initialObjecten]);
 
-    // Effect dat de database triggert bij filterwijzigingen
     useEffect(() => {
         const delayDebounceFn = setTimeout(async () => {
-            // Roep de server action direct aan met de actuele filters
             const data = await getObjecten({ type: filterType, zoekterm: zoekterm });
             setFilteredObjecten(data);
-        }, 250); // Debounce van 250ms om Turso te sparen tijdens het typen
-
+        }, 250);
         return () => clearTimeout(delayDebounceFn);
     }, [zoekterm, filterType]);
-    // Haal hiërarchie op zodra er een object geselecteerd wordt
+
     useEffect(() => {
         if (selectedObject) {
             getObjectHierarchie(selectedObject.id).then(setHierarchie);
         } else {
             setHierarchie({ ouders: [], kinderen: [] });
         }
-    }, [selectedObject, initialObjecten]); // Herlaad ook als de lijst (na mutatie) verandert
+        setEditingRelatie(null); // Reset edit view bij objectwissel
+    }, [selectedObject, initialObjecten]);
 
     const handleSubmit = (formData: FormData) => {
         setFeedback(null);
         startTransition(async () => {
             let res;
             if (selectedObject) {
-                // Edit mode
                 res = await updateObjectAction(selectedObject.id, formData);
                 if (res.success) {
                     setSelectedObject({
@@ -64,12 +72,37 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                     });
                 }
             } else {
-                // Create mode
                 res = await createObjectAction(formData);
                 if (res.success) formRef.current?.reset();
             }
             setFeedback(res);
         });
+    };
+
+    // NIEUW: Handler voor opslaan relatie-wijzigingen
+    const handleRelatieSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        if (!editingRelatie) return;
+
+        const formData = new FormData(e.currentTarget);
+        const res = await updateRelatieDetailsAction(editingRelatie.relatieId, formData);
+
+        if (res.success) {
+            setEditingRelatie(null);
+            // Refresh de netwerklijst direct
+            if (selectedObject) {
+                getObjectHierarchie(selectedObject.id).then(setHierarchie);
+            }
+        } else {
+            alert(res.message);
+        }
+    };
+
+    // Helper om ISO string om te zetten naar datetime-local compatibel formaat (YYYY-MM-DDTHH:MM)
+    const formatToDatetimeLocal = (isoString?: string) => {
+        if (!isoString) return "";
+        const d = new Date(isoString);
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     };
 
     return (
@@ -91,63 +124,69 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                     )}
                 </div>
 
-                {/* We gebruiken key={selectedObject?.id} om het formulier te forceren te resetten/vullen bij selectiewissel */}
                 <form ref={formRef} key={selectedObject?.id} action={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-3 items-end">
                     <div>
-                        <label htmlFor="type" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                            Objecttype
-                        </label>
-                        <select
-                            id="type"
-                            name="type"
-                            required
-                            defaultValue={selectedObject?.type || ""}
-                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none h-10"
-                        >
+                        <label htmlFor="type" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Objecttype</label>
+                        <select id="type" name="type" required defaultValue={selectedObject?.type || ""} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none h-10">
                             <option value="">-- Kies een type --</option>
-                            {objectTypen.map((t) => (
-                                <option key={t.id} value={t.id}>{t.omschrijving}</option>
-                            ))}
+                            {objectTypen.map((t) => (<option key={t.id} value={t.id}>{t.omschrijving}</option>))}
                         </select>
                     </div>
-
                     <div>
-                        <label htmlFor="weergaveNaam" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                            Weergavenaam / Label
-                        </label>
-                        <input
-                            id="weergaveNaam"
-                            type="text"
-                            name="weergaveNaam"
-                            required
-                            defaultValue={selectedObject?.weergaveNaam || ""}
-                            placeholder="Bijv: Kast A"
-                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none h-10"
-                        />
+                        <label htmlFor="weergaveNaam" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Weergavenaam / Label</label>
+                        <input id="weergaveNaam" type="text" name="weergaveNaam" required defaultValue={selectedObject?.weergaveNaam || ""} placeholder="Bijv: Kast A" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none h-10" />
                     </div>
-
                     <div>
-                        <button
-                            type="submit"
-                            disabled={isPending}
-                            className={`w-full text-white font-medium text-sm rounded-lg h-10 transition-colors disabled:bg-slate-400 ${selectedObject ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"}`}
-                        >
+                        <button type="submit" disabled={isPending} className={`w-full text-white font-medium text-sm rounded-lg h-10 transition-colors disabled:bg-slate-400 ${selectedObject ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"}`}>
                             {isPending ? "Opslaan..." : selectedObject ? "Wijzigingen Opslaan" : "Object Toevoegen"}
                         </button>
                     </div>
                 </form>
-
-                {feedback && (
-                    <div className={`mt-3 p-3 rounded-lg text-xs font-medium ${feedback.success ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                        {feedback.message}
-                    </div>
-                )}
+                {feedback && <div className={`mt-3 p-3 rounded-lg text-xs font-medium ${feedback.success ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>{feedback.message}</div>}
             </div>
 
             {/* 2. CONTEXTUELE NETWERK-VIEW (Alleen zichtbaar bij selectie) */}
             {selectedObject && (
-                <div className="bg-slate-900 text-slate-100 rounded-xl p-4 sm:p-5 shadow-inner space-y-4">
-                    <h4 className="text-xs font-bold uppercase tracking-widest text-blue-400">Netwerk Context Relaties</h4>
+                <div className="bg-slate-900 text-slate-100 rounded-xl p-4 sm:p-5 shadow-inner space-y-4 relative">
+                    <div className="flex justify-between items-center">
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-blue-400">Netwerk Context Relaties</h4>
+                        <span className="text-[10px] text-slate-400 italic">Dubbelklik op een relatie om metadata/toelichting te wijzigen</span>
+                    </div>
+
+                    {/* INTERNE MODAL OVERLAY VOOR BEWERKEN VAN EEN RELATIE */}
+                    {editingRelatie && (
+                        <div className="absolute inset-0 bg-slate-950/90 rounded-xl p-5 z-10 flex flex-col justify-center items-center">
+                            <form onSubmit={handleRelatieSubmit} className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-4 shadow-xl text-slate-200">
+                                <h5 className="text-sm font-bold text-blue-400 border-b border-slate-700 pb-2">
+                                    Relatie Aanpassen ({editingRelatie.relatieType})
+                                </h5>
+                                <p className="text-[11px] text-slate-400">
+                                    Tussen <strong>{editingRelatie.ouderNaam || selectedObject.weergaveNaam}</strong> en <strong>{editingRelatie.kindNaam || selectedObject.weergaveNaam}</strong>
+                                </p>
+
+                                <div className="grid grid-cols-2 gap-3 text-xs">
+                                    <div>
+                                        <label className="block text-slate-400 mb-1 font-mono uppercase text-[9px]">Geldig Vanaf (createdAt)</label>
+                                        <input type="datetime-local" name="createdAt" required defaultValue={formatToDatetimeLocal(editingRelatie.createdAt)} className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white focus:outline-none focus:border-blue-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-slate-400 mb-1 font-mono uppercase text-[9px]">Geldig Tot (validUntil)</label>
+                                        <input type="datetime-local" name="validUntil" defaultValue={formatToDatetimeLocal(editingRelatie.validUntil)} className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white focus:outline-none focus:border-blue-500" />
+                                    </div>
+                                </div>
+
+                                <div className="text-xs">
+                                    <label className="block text-slate-400 mb-1 font-mono uppercase text-[9px]">Toelichting / Opmerking</label>
+                                    <textarea name="toelichting" rows={3} defaultValue={editingRelatie.toelichting || ""} placeholder="Bijv: Tijdelijk geplaatst wegens revisie..." className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white text-xs focus:outline-none focus:border-blue-500 resize-none" />
+                                </div>
+
+                                <div className="flex justify-end space-x-2 text-xs pt-2 border-t border-slate-700">
+                                    <button type="button" onClick={() => setEditingRelatie(null)} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-300">Annuleren</button>
+                                    <button type="submit" className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded">Opslaan</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
 
                     <div className="flex flex-col items-center space-y-2 text-sm text-center">
                         {/* OUDERS */}
@@ -157,9 +196,15 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                                 <p className="text-xs text-slate-500 italic py-1">Geen fysieke ouders (Top-level)</p>
                             ) : (
                                 hierarchie.ouders.map((o) => (
-                                    <div key={o.relatieId} className="text-xs py-1 text-slate-300">
-                                        <span className="font-bold text-white">{o.ouderNaam}</span> ({o.ouderType})
+                                    <div 
+                                        key={o.relatieId} 
+                                        onDoubleClick={() => setEditingRelatie(o)} // <-- TRIGGER OUDER EDIT
+                                        className="text-xs py-1.5 text-slate-300 cursor-pointer hover:bg-slate-700/50 rounded px-1 transition-colors select-none group"
+                                        title="Dubbelklik om te bewerken"
+                                    >
+                                        <span className="font-bold text-white group-hover:text-blue-400">{o.ouderNaam}</span> ({o.ouderType})
                                         <span className="text-blue-400 block text-[10px]">↳ {o.relatieType} (volgorde: {o.volgorde})</span>
+                                        {o.toelichting && <span className="block text-[10px] text-amber-400 italic font-mono">“{o.toelichting}”</span>}
                                     </div>
                                 ))
                             )}
@@ -181,50 +226,25 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                             ) : (
                                 <div className="divide-y divide-slate-700">
                                     {hierarchie.kinderen.map((k) => (
-                                        <div key={k.relatieId} className="text-xs py-2 text-slate-300 flex justify-between items-center gap-4 border-b border-slate-800 last:border-0">
+                                        <div 
+                                            key={k.relatieId} 
+                                            onDoubleClick={() => setEditingRelatie(k)} // <-- TRIGGER KIND EDIT
+                                            className="text-xs py-2 text-slate-300 flex justify-between items-center gap-4 border-b border-slate-800 last:border-0 cursor-pointer hover:bg-slate-700/50 rounded px-1 transition-colors select-none group"
+                                            title="Dubbelklik om te bewerken"
+                                        >
                                             <div className="text-left flex-1">
-                                                <span className="font-bold text-white">{k.kindNaam}</span> ({k.kindType})
+                                                <span className="font-bold text-white group-hover:text-blue-400">{k.kindNaam}</span> ({k.kindType})
                                                 <span className="text-slate-400 block text-[10px]">↳ {k.relatieType}</span>
+                                                {k.toelichting && <span className="block text-[10px] text-amber-400 italic font-mono">“{k.toelichting}”</span>}
                                             </div>
 
-                                            <div className="flex items-center space-x-2">
-                                                {/* Volgorde Manipulatie */}
+                                            <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}> {/* Stop propagation om trigger op de knoppen te voorkomen */}
                                                 <div className="flex items-center space-x-1 bg-slate-700 p-1 rounded">
-                                                    <button
-                                                        onClick={async () => {
-                                                            await updateRelatieVolgordeAction(k.relatieId, k.volgorde - 1);
-                                                            getObjectHierarchie(selectedObject.id).then(setHierarchie);
-                                                        }}
-                                                        className="hover:bg-slate-600 text-blue-400 px-1 rounded font-bold text-[10px]"
-                                                    >
-                                                        ▲
-                                                    </button>
+                                                    <button onClick={async () => { await updateRelatieVolgordeAction(k.relatieId, k.volgorde - 1); getObjectHierarchie(selectedObject.id).then(setHierarchie); }} className="hover:bg-slate-600 text-blue-400 px-1 rounded font-bold text-[10px]">▲</button>
                                                     <span className="px-1 font-mono text-[11px] text-white font-bold min-w-4 text-center">{k.volgorde}</span>
-                                                    <button
-                                                        onClick={async () => {
-                                                            await updateRelatieVolgordeAction(k.relatieId, k.volgorde + 1);
-                                                            getObjectHierarchie(selectedObject.id).then(setHierarchie);
-                                                        }}
-                                                        className="hover:bg-slate-600 text-blue-400 px-1 rounded font-bold text-[10px]"
-                                                    >
-                                                        ▼
-                                                    </button>
+                                                    <button onClick={async () => { await updateRelatieVolgordeAction(k.relatieId, k.volgorde + 1); getObjectHierarchie(selectedObject.id).then(setHierarchie); }} className="hover:bg-slate-600 text-blue-400 px-1 rounded font-bold text-[10px]">▼</button>
                                                 </div>
-
-                                                {/* ONTCOPPEL KNOP (Zet validUntil op NU) */}
-                                                <button
-                                                    onClick={async () => {
-                                                        if (confirm(`Weet je zeker dat je de relatie met ${k.kindNaam} wilt verbreken?`)) {
-                                                            await terminateRelatieAction(k.relatieId);
-                                                            // Ververs de lijst direct
-                                                            getObjectHierarchie(selectedObject.id).then(setHierarchie);
-                                                        }
-                                                    }}
-                                                    className="bg-red-950/50 hover:bg-red-900 border border-red-800 text-red-400 p-1.5 rounded text-[10px] font-bold transition-colors"
-                                                    title="Relatie beëindigen"
-                                                >
-                                                    ✕
-                                                </button>
+                                                <button onClick={async () => { if (confirm(`Weet je zeker dat je de relatie met ${k.kindNaam} wilt verbreken?`)) { await terminateRelatieAction(k.relatieId); getObjectHierarchie(selectedObject.id).then(setHierarchie); } }} className="bg-red-950/50 hover:bg-red-900 border border-red-800 text-red-400 p-1.5 rounded text-[10px] font-bold transition-colors" title="Relatie beëindigen">✕</button>
                                             </div>
                                         </div>
                                     ))}
@@ -238,98 +258,51 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
             {/* 3. LIST VIEW */}
             <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b pb-2">
-                    <h3 className="text-base font-bold text-slate-900">
-                        Geregistreerde Objecten <span className="text-xs font-normal text-slate-500">(Toont top 20)</span>
-                    </h3>
+                    <h3 className="text-base font-bold text-slate-900">Geregistreerde Objecten <span className="text-xs font-normal text-slate-500">(Toont top 20)</span></h3>
                 </div>
 
-                {/* HET FILTER VENSTER (Compact voor mobiel) */}
                 <div className="bg-slate-100 p-3 rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                     <div>
                         <label htmlFor="filter_zoek" className="block text-xs font-medium text-slate-600 mb-1">Zoeken op naam</label>
-                        <input
-                            id="filter_zoek"
-                            type="text"
-                            placeholder="Typ om te filteren..."
-                            value={zoekterm}
-                            onChange={(e) => setZoekterm(e.target.value)}
-                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-                        />
+                        <input id="filter_zoek" type="text" placeholder="Typ om te filteren..." value={zoekterm} onChange={(e) => setZoekterm(e.target.value)} className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500" />
                     </div>
                     <div>
                         <label htmlFor="filter_type" className="block text-xs font-medium text-slate-600 mb-1">Filter op Type</label>
-                        <select
-                            id="filter_type"
-                            value={filterType}
-                            onChange={(e) => setFilterType(e.target.value)}
-                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-                        >
+                        <select id="filter_type" value={filterType} onChange={(e) => setFilterType(e.target.value)} className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500">
                             <option value="">-- Alle typen --</option>
-                            {objectTypen.map((t) => (
-                                <option key={t.id} value={t.id}>{t.omschrijving}</option>
-                            ))}
+                            {objectTypen.map((t) => (<option key={t.id} value={t.id}>{t.omschrijving}</option>))}
                         </select>
                     </div>
                 </div>
 
-                {/* Verander hier initialObjecten.length naar filteredObjecten.length */}
                 {filteredObjecten.length === 0 ? (
                     <p className="text-sm text-slate-500 italic">Geen objecten gevonden die voldoen aan de filters.</p>
                 ) : (
-                    <>
-                        {/* Desktop Tabel - Pas initialObjecten.map aan naar filteredObjecten.map */}
-                        <div className="hidden sm:block overflow-x-auto border border-slate-200 rounded-xl">
-                            <table className="min-w-full divide-y divide-slate-200 text-sm text-left">
-                                <thead className="bg-slate-50 text-slate-700 uppercase text-xs font-bold tracking-wider">
-                                    <tr>
-                                        <th className="px-4 py-3">Weergavenaam</th>
-                                        <th className="px-4 py-3">Type</th>
-                                        <th className="px-4 py-3">ID</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-200 text-slate-600">
-                                    {filteredObjecten.map((obj) => {
-                                        const isSelected = selectedObject?.id === obj.id;
-                                        return (
-                                            <tr
-                                                key={obj.id}
-                                                onClick={() => setSelectedObject(obj)}
-                                                className={`cursor-pointer transition-colors ${isSelected ? "bg-blue-50 hover:bg-blue-100 font-medium" : "hover:bg-slate-50"}`}
-                                            >
-                                                <td className={`px-4 py-3 ${isSelected ? "text-blue-700 font-bold" : "text-slate-900"}`}>{obj.weergaveNaam}</td>
-                                                <td className="px-4 py-3">
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{obj.type}</span>
-                                                </td>
-                                                <td className="px-4 py-3 font-mono text-xs text-slate-400">{obj.id.slice(0, 8)}...</td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Mobiel - Pas ook hier initialObjecten.map aan naar filteredObjecten.map */}
-                        <div className="sm:hidden space-y-3">
-                            {filteredObjecten.map((obj) => {
-                                const isSelected = selectedObject?.id === obj.id;
-                                return (
-                                    <div
-                                        key={obj.id}
-                                        onClick={() => setSelectedObject(obj)}
-                                        className={`border rounded-xl p-4 space-y-2 cursor-pointer active:scale-[0.99] transition-transform ${isSelected ? "bg-blue-50 border-blue-400" : "bg-slate-50 border-slate-200"}`}
-                                    >
-                                        <div className="flex justify-between items-start">
-                                            <h4 className={`font-bold ${isSelected ? "text-blue-700" : "text-slate-900"}`}>{obj.weergaveNaam}</h4>
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{obj.type}</span>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </>
+                    <div className="hidden sm:block overflow-x-auto border border-slate-200 rounded-xl">
+                        <table className="min-w-full divide-y divide-slate-200 text-sm text-left">
+                            <thead className="bg-slate-50 text-slate-700 uppercase text-xs font-bold tracking-wider">
+                                <tr>
+                                    <th className="px-4 py-3">Weergavenaam</th>
+                                    <th className="px-4 py-3">Type</th>
+                                    <th className="px-4 py-3">ID</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 text-slate-600">
+                                {filteredObjecten.map((obj) => {
+                                    const isSelected = selectedObject?.id === obj.id;
+                                    return (
+                                        <tr key={obj.id} onClick={() => setSelectedObject(obj)} className={`cursor-pointer transition-colors ${isSelected ? "bg-blue-50 hover:bg-blue-100 font-medium" : "hover:bg-slate-50"}`}>
+                                            <td className={`px-4 py-3 ${isSelected ? "text-blue-700 font-bold" : "text-slate-900"}`}>{obj.weergaveNaam}</td>
+                                            <td className="px-4 py-3"><span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{obj.type}</span></td>
+                                            <td className="px-4 py-3 font-mono text-xs text-slate-400">{obj.id.slice(0, 8)}...</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </div>
-
         </div>
     );
 }
