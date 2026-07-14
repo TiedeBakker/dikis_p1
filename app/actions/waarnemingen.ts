@@ -1,3 +1,4 @@
+//app/actions/waarnemingen.ts
 "use server";
 
 import { db } from "@/db";
@@ -167,3 +168,84 @@ export async function getLaatsteWaardenVoorObjectAction(
   }
 }
 
+
+
+/// 6. Corrigeer een specifieke meting op basis van zijn ID (EAV) - Nu inclusief tijdstip-correctie!
+export async function updateWaarnemingAction(
+  id: string, 
+  nieuweWaarde: string,
+  nieuwTijdstipLokaal?: string // <-- NIEUW: Optioneel aanpasbaar tijdstip
+) {
+  if (!id) {
+    return { success: false, message: "Meting ID is verplicht voor een correctie." };
+  }
+
+  try {
+    const updateData: Record<string, any> = {
+      waarde: nieuweWaarde
+    };
+
+    // Als de gebruiker het tijdstip heeft aangepast, converteren we dit netjes naar UTC
+    if (nieuwTijdstipLokaal) {
+      updateData.tijdstipUtc = new Date(nieuwTijdstipLokaal).toISOString();
+    }
+
+    // Voer de update uit op de tabel 'metingen'
+    await db
+      .update(metingen)
+      .set(updateData)
+      .where(eq(metingen.id, id));
+
+    // Revalidate de registratie-route om direct de nieuwe waarden en tijden te tonen
+    revalidatePath("/registratie");
+
+    return { 
+      success: true, 
+      message: "De meting (en het tijdstip) is succesvol gecorrigeerd!" 
+    };
+  } catch (error) {
+    console.error("Fout bij corrigeren van waarneming:", error);
+    return { 
+      success: false, 
+      message: "Databasefout bij het corrigeren van de meting." 
+    };
+  }
+}
+// app/actions/waarnemingen.ts
+
+// Haal de allerlaatste waarden op van álle parameters die ooit voor dit object zijn gemeten
+export async function getLaatsteMetingenVoorObject(objectId: string) {
+  if (!objectId) return [];
+
+  try {
+    // We halen alle unieke metingen op, gesorteerd op tijdstip, 
+    // en filteren in de applicatie (of via SQL) op de nieuwste per parameter.
+    const resultaten = await db
+      .select({
+        id: metingen.id,
+        parameterId: metingen.parameterId,
+        parameterNaam: parameterDefinities.naam,
+        waarde: metingen.waarde,
+        tijdstipUtc: metingen.tijdstipUtc,
+        eenheidId: parameterDefinities.eenheidId,
+        dataType: parameterDefinities.dataType,
+      })
+      .from(metingen)
+      .innerJoin(parameterDefinities, eq(metingen.parameterId, parameterDefinities.id))
+      .where(eq(metingen.objectId, objectId))
+      .orderBy(desc(metingen.tijdstipUtc));
+
+    // Filter handmatig op de unieke laatste meting per parameterId
+    const uniekeLaatste: Record<string, typeof resultaten[number]> = {};
+    for (const r of resultaten) {
+      if (!uniekeLaatste[r.parameterId]) {
+        uniekeLaatste[r.parameterId] = r;
+      }
+    }
+
+    return Object.values(uniekeLaatste);
+  } catch (error) {
+    console.error("Fout bij ophalen laatste metingen voor object:", error);
+    return [];
+  }
+}

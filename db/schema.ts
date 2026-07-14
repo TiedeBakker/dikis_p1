@@ -1,3 +1,5 @@
+// db/schema.ts
+
 import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
 import { v4 as uuidv4 } from "uuid";
 
@@ -18,16 +20,18 @@ export const eenheden = sqliteTable("eenheden", {
   omschrijving: text("omschrijving").notNull(), // 'Graden Celsius'
 });
 
-// Alle mogelijke parameters/kenmerken in het systeem
+
+// Alle mogelijke parameters/kenmerken in het systeem (voor metingen, eigenschappen, etc.)
 export const parameterDefinities = sqliteTable("parameter_definities", {
   id: text("id").primaryKey(),
   naam: text("naam").notNull(),
-  // Voeg hier 'datum' toe aan de enum-smaken:
-  dataType: text("data_type", { enum: ["tekst", "numeriek", "keuzelijst", "datum"] }).notNull(),
+  // "textarea" is hier toegevoegd aan de enum-smaken:
+  dataType: text("data_type", { enum: ["tekst", "textarea", "numeriek", "keuzelijst", "datum"] }).notNull(),
   eenheidId: text("eenheid_id").references(() => eenheden.id),
   helpTekst: text("help_tekst"),
   keuzeOpties: text("keuze_opties"), // JSON-array voor keuzelijst
 });
+
 
 // Relatietypen tussen objecten (bijv: 'fysiek_onderdeel_van', 'huwelijk_met', 'beheerd_door')
 export const relatieTypen = sqliteTable("relatie_typen", {

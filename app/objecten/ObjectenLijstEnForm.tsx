@@ -2,16 +2,18 @@
 "use client";
 
 import { useRef, useTransition, useState, useEffect } from "react";
-import { 
-  createObjectAction, 
-  updateObjectAction, 
-  getObjectHierarchie, 
-  getObjecten, 
-  updateRelatieVolgordeAction, 
-  terminateRelatieAction,
-  updateRelatieDetailsAction // <-- NIEUW
+import {
+    createObjectAction,
+    updateObjectAction,
+    getObjectHierarchie,
+    getObjecten,
+    updateRelatieVolgordeAction,
+    terminateRelatieAction,
+    updateRelatieDetailsAction // <-- NIEUW
 } from "@/app/actions/objecten";
 
+import NetworkHoverCard from "@/components/NetworkHoverCard";
+import { getWaarnemingenHistorie } from "@/app/actions/waarnemingen";
 interface ObjectType { id: string; omschrijving: string; }
 interface SysteemObject { id: string; type: string; weergaveNaam: string; createdAt: string; }
 
@@ -28,7 +30,7 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
     // State voor selectie & bewerken
     const [selectedObject, setSelectedObject] = useState<SysteemObject | null>(null);
     const [hierarchie, setHierarchie] = useState<{ ouders: any[]; kinderen: any[] }>({ ouders: [], kinderen: [] });
-    
+
     // NIEUW: State voor het bewerken van een specifieke relatie via Double Click
     const [editingRelatie, setEditingRelatie] = useState<any | null>(null);
 
@@ -104,6 +106,24 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
         const d = new Date(isoString);
         return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     };
+    // --- DRAWER (Zijbalk) STATE ---
+    const [drawerObject, setDrawerObject] = useState<SysteemObject | null>(null);
+    const [drawerHistorie, setDrawerHistorie] = useState<any[]>([]);
+    const [loadingDrawer, setLoadingDrawer] = useState(false);
+
+    // Laad de historie zodra er een object in de drawer geopend wordt
+    useEffect(() => {
+        if (drawerObject) {
+            setLoadingDrawer(true);
+            // We hergebruiken je getWaarnemingenHistorie action
+            getWaarnemingenHistorie(drawerObject.id).then((data) => {
+                setDrawerHistorie(data);
+                setLoadingDrawer(false);
+            });
+        } else {
+            setDrawerHistorie([]);
+        }
+    }, [drawerObject]);
 
     return (
         <div className="space-y-6">
@@ -189,20 +209,31 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                     )}
 
                     <div className="flex flex-col items-center space-y-2 text-sm text-center">
-                        {/* OUDERS */}
+                        {/* ==================== OUDERS ==================== */}
                         <div className="w-full max-w-md bg-slate-800 rounded-lg p-2 border border-slate-700">
                             <span className="text-[10px] text-slate-400 block font-mono uppercase">Ouder Relatie(s)</span>
                             {hierarchie.ouders.length === 0 ? (
                                 <p className="text-xs text-slate-500 italic py-1">Geen fysieke ouders (Top-level)</p>
                             ) : (
                                 hierarchie.ouders.map((o) => (
-                                    <div 
-                                        key={o.relatieId} 
-                                        onDoubleClick={() => setEditingRelatie(o)} // <-- TRIGGER OUDER EDIT
+                                    <div
+                                        key={o.relatieId}
+                                        onDoubleClick={() => setEditingRelatie(o)}
                                         className="text-xs py-1.5 text-slate-300 cursor-pointer hover:bg-slate-700/50 rounded px-1 transition-colors select-none group"
                                         title="Dubbelklik om te bewerken"
                                     >
-                                        <span className="font-bold text-white group-hover:text-blue-400">{o.ouderNaam}</span> ({o.ouderType})
+                                        {/* GEÏNTEGREERD: Hover over de ouder voor live meetwaarden */}
+                                        <NetworkHoverCard
+                                            objectId={o.vanObjectId || o.ouderId} // Afhankelijk van de key in je hierarchie-object (id van de ouder)
+                                            objectNaam={o.ouderNaam}
+                                            objectType={o.ouderType}
+                                        >
+                                            <span className="font-bold text-white group-hover:text-blue-400 underline decoration-dotted decoration-slate-500 hover:decoration-blue-400">
+                                                {o.ouderNaam}
+                                            </span>
+                                        </NetworkHoverCard>
+
+                                        <span className="text-slate-400"> ({o.ouderType})</span>
                                         <span className="text-blue-400 block text-[10px]">↳ {o.relatieType} (volgorde: {o.volgorde})</span>
                                         {o.toelichting && <span className="block text-[10px] text-amber-400 italic font-mono">“{o.toelichting}”</span>}
                                     </div>
@@ -210,15 +241,34 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                             )}
                         </div>
 
-                        {/* HET OBJECT ZELF */}
-                        <div className="w-5 h-5 flex items-center justify-center text-blue-400">↓</div>
-                        <div className="w-full max-w-md bg-blue-600 text-white rounded-lg p-2 font-bold shadow-md border border-blue-400">
-                            {selectedObject.weergaveNaam}
-                            <span className="text-[10px] opacity-75 block font-mono font-normal">FOCUS OBJECT ({selectedObject.type})</span>
-                        </div>
+                        {/* HET OBJECT ZELF
+<div className="w-5 h-5 flex items-center justify-center text-blue-400">↓</div>
+<div className="w-full max-w-md bg-blue-600 text-white rounded-lg p-2 font-bold shadow-md border border-blue-400">
+    {selectedObject.weergaveNaam}
+    <span className="text-[10px] opacity-75 block font-mono font-normal">FOCUS OBJECT ({selectedObject.type})</span>
+</div>
+<div className="w-5 h-5 flex items-center justify-center text-blue-400">↓</div> */}
+
+                        {/* ==================== HET OBJECT ZELF ==================== */}
                         <div className="w-5 h-5 flex items-center justify-center text-blue-400">↓</div>
 
-                        {/* KINDEREN */}
+                        {/* GEÏNTEGREERD: Hover over het focus object voor de live meetwaarden */}
+                        <NetworkHoverCard
+                            objectId={selectedObject.id}
+                            objectNaam={selectedObject.weergaveNaam}
+                            objectType={selectedObject.type}
+                        >
+                            <div className="w-full max-w-md bg-blue-600 text-white rounded-lg p-2 font-bold shadow-md border border-blue-400 cursor-pointer hover:bg-blue-500 hover:scale-[1.02] transition-all select-none text-center">
+                                <span className="underline decoration-dotted decoration-blue-300 hover:decoration-white">
+                                    {selectedObject.weergaveNaam}
+                                </span>
+                                <span className="text-[10px] opacity-75 block font-mono font-normal">FOCUS OBJECT ({selectedObject.type})</span>
+                            </div>
+                        </NetworkHoverCard>
+
+                        <div className="w-5 h-5 flex items-center justify-center text-blue-400">↓</div>
+
+                        {/* ==================== KINDEREN ==================== */}
                         <div className="w-full max-w-md bg-slate-800 rounded-lg p-2 border border-slate-700">
                             <span className="text-[10px] text-slate-400 block font-mono uppercase">Kind Relatie(s) (op volgorde)</span>
                             {hierarchie.kinderen.length === 0 ? (
@@ -226,19 +276,30 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                             ) : (
                                 <div className="divide-y divide-slate-700">
                                     {hierarchie.kinderen.map((k) => (
-                                        <div 
-                                            key={k.relatieId} 
-                                            onDoubleClick={() => setEditingRelatie(k)} // <-- TRIGGER KIND EDIT
+                                        <div
+                                            key={k.relatieId}
+                                            onDoubleClick={() => setEditingRelatie(k)}
                                             className="text-xs py-2 text-slate-300 flex justify-between items-center gap-4 border-b border-slate-800 last:border-0 cursor-pointer hover:bg-slate-700/50 rounded px-1 transition-colors select-none group"
                                             title="Dubbelklik om te bewerken"
                                         >
                                             <div className="text-left flex-1">
-                                                <span className="font-bold text-white group-hover:text-blue-400">{k.kindNaam}</span> ({k.kindType})
+                                                {/* GEÏNTEGREERD: Hover over het kind voor live meetwaarden */}
+                                                <NetworkHoverCard
+                                                    objectId={k.naarObjectId || k.kindId} // Afhankelijk van de key in je hierarchie-object (id van het kind)
+                                                    objectNaam={k.kindNaam}
+                                                    objectType={k.kindType}
+                                                >
+                                                    <span className="font-bold text-white group-hover:text-blue-400 underline decoration-dotted decoration-slate-500 hover:decoration-blue-400">
+                                                        {k.kindNaam}
+                                                    </span>
+                                                </NetworkHoverCard>
+
+                                                <span className="text-slate-400"> ({k.kindType})</span>
                                                 <span className="text-slate-400 block text-[10px]">↳ {k.relatieType}</span>
                                                 {k.toelichting && <span className="block text-[10px] text-amber-400 italic font-mono">“{k.toelichting}”</span>}
                                             </div>
 
-                                            <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}> {/* Stop propagation om trigger op de knoppen te voorkomen */}
+                                            <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
                                                 <div className="flex items-center space-x-1 bg-slate-700 p-1 rounded">
                                                     <button onClick={async () => { await updateRelatieVolgordeAction(k.relatieId, k.volgorde - 1); getObjectHierarchie(selectedObject.id).then(setHierarchie); }} className="hover:bg-slate-600 text-blue-400 px-1 rounded font-bold text-[10px]">▲</button>
                                                     <span className="px-1 font-mono text-[11px] text-white font-bold min-w-4 text-center">{k.volgorde}</span>
@@ -285,22 +346,169 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                                     <th className="px-4 py-3">Weergavenaam</th>
                                     <th className="px-4 py-3">Type</th>
                                     <th className="px-4 py-3">ID</th>
-                                </tr>
+                                    <th className="px-4 py-3 text-right">Acties</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200 text-slate-600">
                                 {filteredObjecten.map((obj) => {
                                     const isSelected = selectedObject?.id === obj.id;
                                     return (
-                                        <tr key={obj.id} onClick={() => setSelectedObject(obj)} className={`cursor-pointer transition-colors ${isSelected ? "bg-blue-50 hover:bg-blue-100 font-medium" : "hover:bg-slate-50"}`}>
+                                        <tr
+                                            key={obj.id}
+                                            onClick={() => setSelectedObject(obj)}
+                                            className={`cursor-pointer transition-colors ${isSelected ? "bg-blue-50 hover:bg-blue-100 font-medium" : "hover:bg-slate-50"}`}
+                                        >
                                             <td className={`px-4 py-3 ${isSelected ? "text-blue-700 font-bold" : "text-slate-900"}`}>{obj.weergaveNaam}</td>
-                                            <td className="px-4 py-3"><span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{obj.type}</span></td>
+                                            <td className="px-4 py-3">
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                    {obj.type}
+                                                </span>
+                                            </td>
                                             <td className="px-4 py-3 font-mono text-xs text-slate-400">{obj.id.slice(0, 8)}...</td>
+
+                                            {/* ACTIECELL MET DE DETAILS-TRIGGER */}
+                                            <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDrawerObject(obj)}
+                                                    className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors border border-slate-200"
+                                                    title="Toon uitgebreide details en historie"
+                                                >
+                                                    📊 Details
+                                                </button>
+                                            </td>
                                         </tr>
                                     );
                                 })}
                             </tbody>
                         </table>
                     </div>
+                )}
+            </div>
+            {/* ==================== ZIJSCHIRM / CONTEXT DRAWER ==================== */}
+            {/* Overlay achtergrond */}
+            <div
+                className={`fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-40 transition-opacity duration-300 ${drawerObject ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+                onClick={() => setDrawerObject(null)}
+            />
+
+            {/* De daadwerkelijke lade (Drawer) */}
+            <div
+                className={`fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-50 transition-transform duration-300 ease-in-out transform border-l border-slate-200 flex flex-col ${drawerObject ? "translate-x-0" : "translate-x-full"}`}
+            >
+                {drawerObject && (
+                    <>
+                        {/* Header van de Drawer */}
+                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <div>
+                                <span className="text-[10px] uppercase font-bold text-blue-600 tracking-wider font-mono">{drawerObject.type}</span>
+                                <h4 className="text-base font-bold text-slate-900">{drawerObject.weergaveNaam}</h4>
+                            </div>
+                            <button
+                                onClick={() => setDrawerObject(null)}
+                                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 text-lg font-bold"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Inhoud van de Drawer (scrollbaar) */}
+                        <div className="flex-1 overflow-y-auto p-5 space-y-6">
+
+                            {/* Sectie 1: Systeeminformatie */}
+                            <div className="space-y-2">
+                                <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">Object Metadata</h5>
+                                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 space-y-2 text-xs">
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-500">Uniek ID:</span>
+                                        <span className="font-mono text-slate-800 select-all">{drawerObject.id}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-500">Geregistreerd op:</span>
+                                        <span className="text-slate-800">
+                                            {new Date(drawerObject.createdAt).toLocaleDateString("nl-NL", {
+                                                day: "2-digit",
+                                                month: "long",
+                                                year: "numeric",
+                                                hour: "2-digit",
+                                                minute: "2-digit"
+                                            })}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Sectie 2: Recente Tijdlijn / Meetwaarden Historie */}
+                            <div className="space-y-3">
+                                <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">Recente Meetwaarden & Wijzigingen</h5>
+
+                                {loadingDrawer ? (
+                                    <div className="py-8 text-center text-xs text-slate-400 italic">
+                                        Geschiedenis laden...
+                                    </div>
+                                ) : drawerHistorie.length === 0 ? (
+                                    <div className="py-8 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed">
+                                        Nog geen historische waarnemingen geregistreerd voor dit object.
+                                    </div>
+                                ) : (
+                                    <div className="flow-root">
+                                        <ul className="-mb-8">
+                                            {drawerHistorie.slice(0, 15).map((meting, index) => (
+                                                <li key={meting.id}>
+                                                    <div className="relative pb-8">
+                                                        {/* Lijn tussen de tijdlijnpunten */}
+                                                        {index !== drawerHistorie.length - 1 && (
+                                                            <span className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-slate-100" aria-hidden="true" />
+                                                        )}
+                                                        <div className="relative flex space-x-3">
+                                                            <div>
+                                                                {/* Bolletje */}
+                                                                <span className="h-8 w-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-xs">
+                                                                    📊
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex-1 min-w-0 pt-1.5">
+                                                                <div className="flex justify-between items-start gap-2">
+                                                                    <p className="text-xs font-semibold text-slate-800 truncate">
+                                                                        {meting.parameterNaam}
+                                                                    </p>
+                                                                    <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                                                                        {meting.waarde}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-[10px] text-slate-400 mt-0.5">
+                                                                    {new Date(meting.tijdstipUtc).toLocaleDateString("nl-NL", {
+                                                                        day: "2-digit",
+                                                                        month: "short",
+                                                                        hour: "2-digit",
+                                                                        minute: "2-digit"
+                                                                    })}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Footer van de Drawer met snelkoppelingen of acties */}
+                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    // Snelkoppeling om dit direct te selecteren voor bewerken of relatiebeheer
+                                    setSelectedObject(drawerObject);
+                                    setDrawerObject(null);
+                                }}
+                                className="w-full bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold py-2 px-3 rounded-lg transition-colors text-center"
+                            >
+                                Selecteer in Netwerk Context
+                            </button>
+                        </div>
+                    </>
                 )}
             </div>
         </div>

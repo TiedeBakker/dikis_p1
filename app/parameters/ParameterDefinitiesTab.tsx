@@ -1,3 +1,4 @@
+// app/parameters/ParameterDefinitiesTab.tsx
 "use client";
 
 import { useRef, useTransition, useState, useEffect } from "react";
@@ -97,6 +98,7 @@ export default function ParameterDefinitiesTab({ definities: initialDefinities, 
               <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Datatype</label>
               <select name="dataType" value={selectedType} onChange={(e) => setSelectedType(e.target.value)} required className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm h-10 focus:outline-none">
                 <option value="tekst">Tekstregel (string)</option>
+                <option value="textarea">Lange tekst (textarea)</option> {/* <-- NIEUW */}
                 <option value="numeriek">Numeriek (getal)</option>
                 <option value="keuzelijst">Keuzelijst (dropdown)</option>
                 <option value="datum">Datum & Tijd</option>
@@ -157,6 +159,7 @@ export default function ParameterDefinitiesTab({ definities: initialDefinities, 
           <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 focus:outline-none">
             <option value="">-- Alle typen --</option>
             <option value="tekst">Tekstregel</option>
+            <option value="textarea">Lange tekst</option> {/* <-- NIEUW */}
             <option value="numeriek">Numeriek</option>
             <option value="keuzelijst">Keuzelijst</option>
             <option value="datum">Datum & Tijd</option>
