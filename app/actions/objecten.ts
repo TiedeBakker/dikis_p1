@@ -445,3 +445,143 @@ export async function getOuderBoom(objectId: string): Promise<any[]> {
   await fetchOudersRecursief(objectId);
   return boom;
 }
+
+// app/actions/objecten.ts
+// ... bestaande imports en actions ...
+
+/**
+ * Specifieke server action voor de Boom Navigator (Fase 1)
+ * Haalt de stamboom (ouders met snoei-logica) en directe kinderen met indicators op.
+ */
+export async function getBoomNavigatorData(objectId: string) {
+  if (!objectId) return null;
+
+  try {
+    // 1. Haal het centrale object op
+    const [centraal] = await db
+      .select({
+        id: objecten.id,
+        weergaveNaam: objecten.weergaveNaam,
+        type: objecten.type,
+        typeOmschrijving: objectTypen.omschrijving,
+      })
+      .from(objecten)
+      .leftJoin(objectTypen, eq(objecten.type, objectTypen.id))
+      .where(eq(objecten.id, objectId))
+      .limit(1);
+
+    if (!centraal) return null;
+
+    // 2. Recursieve helper om voorouders op te halen.
+    // 'levelsSinceSplit' houdt bij hoeveel generaties we boven een splitsing (>= 2 ouders) zitten.
+    async function fetchAncestors(currentId: string, depth: number = 0, levelsSinceSplit: number = -1): Promise<any[]> {
+      if (depth > 8) return []; // Harde veiligheidslimiet tegen oneindige lussen
+
+      const directParents = await db
+        .select({
+          relatieId: objectRelaties.id,
+          relatieType: relatieTypen.omschrijving,
+          id: objecten.id,
+          weergaveNaam: objecten.weergaveNaam,
+          type: objecten.type,
+          typeOmschrijving: objectTypen.omschrijving,
+        })
+        .from(objectRelaties)
+        .innerJoin(objecten, eq(objectRelaties.vanObjectId, objecten.id))
+        .innerJoin(relatieTypen, eq(objectRelaties.relatieTypeId, relatieTypen.id))
+        .leftJoin(objectTypen, eq(objecten.type, objectTypen.id))
+        .where(
+          and(
+            eq(objectRelaties.naarObjectId, currentId),
+            isNull(objectRelaties.validUntil)
+          )
+        );
+
+      const isMultiParent = directParents.length >= 2;
+      
+      let nextLevelsSinceSplit = levelsSinceSplit;
+      if (isMultiParent && levelsSinceSplit === -1) {
+        nextLevelsSinceSplit = 0; // Splitsing begint hier!
+      } else if (levelsSinceSplit !== -1) {
+        nextLevelsSinceSplit = levelsSinceSplit + 1;
+      }
+
+      const parentsWithAncestors = await Promise.all(
+        directParents.map(async (parent) => {
+          let ancestors: any[] = [];
+          
+          // Als we nog geen splitsing hebben gehad (-1) óf we zijn pas 1 niveau diep vanaf de splitsing (nextLevelsSinceSplit < 1),
+          // dan halen we de volgende generatie op (waardoor we max ouders & grootouders tonen vanaf de splitsing).
+          const canContinue = nextLevelsSinceSplit === -1 || nextLevelsSinceSplit < 1;
+          
+          if (canContinue) {
+            ancestors = await fetchAncestors(parent.id, depth + 1, nextLevelsSinceSplit);
+          }
+
+          return {
+            ...parent,
+            ouders: ancestors,
+          };
+        })
+      );
+
+      return parentsWithAncestors;
+    }
+
+    const oudersBoom = await fetchAncestors(objectId, 0, -1);
+
+    // 3. Eerste generatie afstammelingen (kinderen) ophalen
+    const directeKinderen = await db
+      .select({
+        relatieId: objectRelaties.id,
+        volgorde: objectRelaties.volgorde,
+        relatieType: relatieTypen.omschrijving,
+        id: objecten.id,
+        weergaveNaam: objecten.weergaveNaam,
+        type: objecten.type,
+        typeOmschrijving: objectTypen.omschrijving,
+      })
+      .from(objectRelaties)
+      .innerJoin(objecten, eq(objectRelaties.naarObjectId, objecten.id))
+      .innerJoin(relatieTypen, eq(objectRelaties.relatieTypeId, relatieTypen.id))
+      .leftJoin(objectTypen, eq(objecten.type, objectTypen.id))
+      .where(
+        and(
+          eq(objectRelaties.vanObjectId, objectId),
+          isNull(objectRelaties.validUntil)
+        )
+      )
+      .orderBy(asc(objectRelaties.volgorde), asc(objecten.weergaveNaam));
+
+    // Voor elk kind controleren of er opvolgende generaties zijn
+    const kinderenMetIndicator = await Promise.all(
+      directeKinderen.map(async (kind) => {
+        const [subKind] = await db
+          .select({ id: objectRelaties.id })
+          .from(objectRelaties)
+          .where(
+            and(
+              eq(objectRelaties.vanObjectId, kind.id),
+              isNull(objectRelaties.validUntil)
+            )
+          )
+          .limit(1);
+
+        return {
+          ...kind,
+          heeftKinderen: !!subKind,
+        };
+      })
+    );
+
+    return {
+      centraal,
+      oudersBoom,
+      kinderen: kinderenMetIndicator,
+    };
+
+  } catch (error) {
+    console.error("Fout bij ophalen boom navigator data:", error);
+    return null;
+  }
+}

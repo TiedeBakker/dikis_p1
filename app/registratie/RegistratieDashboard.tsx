@@ -6,6 +6,12 @@ import { getFormulierVeldenVoorSet, createWaarnemingenAction, getWaarnemingenHis
 import { searchObjectenAction } from "@/app/actions/objecten";
 // Let op: Zorg dat je deze server-action hebt of aanmaakt om een individuele meting te updaten
 import { updateWaarnemingAction } from "@/app/actions/waarnemingen";
+import dynamic from "next/dynamic";
+
+// Laad de RichTextEditor alleen aan de client-side
+const RichTextEditor = dynamic(() => import("@/components/RichTextEditor"), {
+  ssr: false,
+});
 
 interface Props {
   objecten: any[];
@@ -52,6 +58,8 @@ export default function RegistratieDashboard({ objecten, sets, alleParameters, i
   const [correctieWaarde, setCorrectieWaarde] = useState("");
   const [correctieTijdstip, setCorrectieTijdstip] = useState(""); // <-- NIEUW
   const [correctieFeedback, setCorrectieFeedback] = useState<{ success: boolean; message: string } | null>(null);
+
+  const [richTextWaarden, setRichTextWaarden] = useState<Record<string, string>>({});
 
   // LIVE SERVER-SIDE ZOEKOPDRACHT VOOR OBJECTEN (Debounced)
   useEffect(() => {
@@ -191,6 +199,7 @@ export default function RegistratieDashboard({ objecten, sets, alleParameters, i
       if (res.success) {
         formRef.current?.reset();
         setLosseParameters([]);
+        setRichTextWaarden({}); // <-- NIEUW: Reset alle geopende WYSIWYG velden
         setRegistratieTijdstip(new Date().toISOString().slice(0, 16));
 
         const updateHist = await getWaarnemingenHistorie(selectedObject || undefined);
@@ -374,13 +383,26 @@ export default function RegistratieDashboard({ objecten, sets, alleParameters, i
                             )}
 
                             {veld.dataType === "textarea" && (
-                              <textarea
-                                name={veld.parameterId}
-                                placeholder="Voer tekst in op meerdere regels... (Enter voor nieuwe regel)"
-                                rows={3}
-                                onKeyDown={handleTextareaKeyDown}
-                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-y min-h-[80px]"
-                              />
+                              <div className="space-y-1">
+                                {/* TipTap Editor */}
+                                <RichTextEditor
+                                  value={richTextWaarden[veld.parameterId] || ""}
+                                  onChange={(html) => {
+                                    setRichTextWaarden((prev) => ({
+                                      ...prev,
+                                      [veld.parameterId]: html,
+                                    }));
+                                  }}
+                                  placeholder="Voer gedetailleerde toelichting of waarneming in..."
+                                />
+
+                                {/* Verborgen invoerveld zodat de bestaande formData.get(veld.parameterId) naadloos blijft werken! */}
+                                <input
+                                  type="hidden"
+                                  name={veld.parameterId}
+                                  value={richTextWaarden[veld.parameterId] || ""}
+                                />
+                              </div>
                             )}
 
                             {veld.dataType === "numeriek" && (
@@ -463,23 +485,42 @@ export default function RegistratieDashboard({ objecten, sets, alleParameters, i
               {historie.length === 0 ? (
                 <p className="text-slate-500 italic py-4 text-center">Nog geen metingen geregistreerd.</p>
               ) : (
-                historie.slice(0, 10).map((h: any) => (
-                  <div key={h.id} className="pt-2 first:pt-0 flex flex-col space-y-0.5">
-                    <div className="flex justify-between font-medium">
-                      <span className="text-slate-200">{h.parameterNaam}</span>
-                      <span className="text-emerald-400 font-mono font-bold bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-900/40 whitespace-pre-wrap text-right">
-                        {h.waarde}
-                      </span>
+                historie.slice(0, 10).map((h: any) => {
+                  const isRichText = h.dataType === "textarea";
+
+                  return (
+                    <div key={h.id} className="pt-2 first:pt-0 flex flex-col space-y-1">
+                      <div className="flex justify-between font-medium items-start gap-3">
+                        <span className="text-slate-200 shrink-0">{h.parameterNaam}</span>
+
+                        {isRichText ? (
+                          /* WYSIWYG Editor HTML veilig renderen op een donkere achtergrond */
+                          <div
+                            className="prose prose-invert prose-xs max-w-none text-emerald-400 font-sans bg-emerald-950/30 px-2 py-1.5 rounded border border-emerald-900/40 overflow-hidden break-words text-left w-full"
+                            dangerouslySetInnerHTML={{ __html: h.waarde }}
+                          />
+                        ) : (
+                          /* Normale weergave voor getallen/korte tekst */
+                          <span className="text-emerald-400 font-mono font-bold bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-900/40 whitespace-pre-wrap text-right">
+                            {h.waarde}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex justify-between text-[10px] text-slate-500 pt-0.5">
+                        <span className="font-mono">Object: {h.objectId}</span>
+                        <span>
+                          {new Date(h.tijdstipUtc).toLocaleTimeString([], {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex justify-between text-[10px] text-slate-500">
-                      <span className="font-mono">Object: {h.objectId}</span>
-                      <span>{new Date(h.tijdstipUtc).toLocaleTimeString([], {
-                        day: '2-digit',
-                        month: 'short', hour: '2-digit', minute: '2-digit'
-                      })}</span>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -563,8 +604,20 @@ export default function RegistratieDashboard({ objecten, sets, alleParameters, i
                         })}
                       </td>
                       <td className="px-4 py-3 font-semibold text-slate-800">{meting.parameterNaam}</td>
-                      <td className="px-4 py-3 font-mono font-bold text-blue-600 whitespace-pre-wrap max-w-md">
-                        {meting.waarde}
+                      {/* NIEUWE CODE: */}
+                      <td className="px-4 py-3 max-w-md">
+                        {meting.dataType === "textarea" ? (
+                          /* Render de HTML netjes binnen de tabelcel met een subtiel blauw tintje */
+                          <div
+                            className="prose prose-sm prose-blue max-w-none text-blue-700 bg-blue-50/50 px-2.5 py-1.5 rounded-lg border border-blue-100/50 text-left"
+                            dangerouslySetInnerHTML={{ __html: meting.waarde }}
+                          />
+                        ) : (
+                          /* Normale weergave voor getallen/korte tekst */
+                          <span className="font-mono font-bold text-blue-600 whitespace-pre-wrap">
+                            {meting.waarde}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-700 font-medium capitalize">
@@ -623,12 +676,13 @@ export default function RegistratieDashboard({ objecten, sets, alleParameters, i
 
                 {/* Dynamisch invoerveld op basis van datatype van de te corrigeren meting */}
                 {editingMeting.dataType === "textarea" ? (
-                  <textarea
-                    value={correctieWaarde}
-                    onChange={(e) => setCorrectieWaarde(e.target.value)}
-                    rows={4}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-y"
-                  />
+                  <div className="space-y-1">
+                    <RichTextEditor
+                      value={correctieWaarde}
+                      onChange={(html) => setCorrectieWaarde(html)}
+                      placeholder="Pas de gedetailleerde toelichting of waarneming aan..."
+                    />
+                  </div>
                 ) : editingMeting.dataType === "numeriek" ? (
                   <input
                     type="number"
