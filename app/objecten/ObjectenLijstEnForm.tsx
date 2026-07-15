@@ -9,7 +9,8 @@ import {
     getObjecten,
     updateRelatieVolgordeAction,
     terminateRelatieAction,
-    updateRelatieDetailsAction // <-- NIEUW
+    updateRelatieDetailsAction, // <-- NIEUW
+    getOuderBoom, // <-- NIEUW
 } from "@/app/actions/objecten";
 
 import NetworkHoverCard from "@/components/NetworkHoverCard";
@@ -106,24 +107,38 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
         const d = new Date(isoString);
         return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     };
+
     // --- DRAWER (Zijbalk) STATE ---
     const [drawerObject, setDrawerObject] = useState<SysteemObject | null>(null);
     const [drawerHistorie, setDrawerHistorie] = useState<any[]>([]);
+    const [drawerHierarchie, setDrawerHierarchie] = useState<{ ouders: any[]; kinderen: any[] }>({ ouders: [], kinderen: [] }); // <-- DEZE TOEVOEGEN
     const [loadingDrawer, setLoadingDrawer] = useState(false);
 
-    // Laad de historie zodra er een object in de drawer geopend wordt
+    // Laad de historie en hiërarchie zodra er een object in de drawer geopend wordt
+    // Laad de historie en hiërarchie zodra er een object in de drawer geopend wordt
     useEffect(() => {
         if (drawerObject) {
             setLoadingDrawer(true);
-            // We hergebruiken je getWaarnemingenHistorie action
-            getWaarnemingenHistorie(drawerObject.id).then((data) => {
-                setDrawerHistorie(data);
+
+            // Haal waarnemingen, de complete ouderboom én directe kinderen gelijktijdig op
+            Promise.all([
+                getWaarnemingenHistorie(drawerObject.id),
+                getOuderBoom(drawerObject.id), // <-- Complete lijn omhoog
+                getObjectHierarchie(drawerObject.id) // <-- Alleen voor de directe kinderen!
+            ]).then(([historieData, ouderBoomData, hierarchieData]) => {
+                setDrawerHistorie(historieData);
+                setDrawerHierarchie({
+                    ouders: ouderBoomData, // Complete lijn omhoog!
+                    kinderen: hierarchieData.kinderen // Alleen directe kinderen eronder
+                });
                 setLoadingDrawer(false);
             });
         } else {
             setDrawerHistorie([]);
+            setDrawerHierarchie({ ouders: [], kinderen: [] });
         }
     }, [drawerObject]);
+
 
     return (
         <div className="space-y-6">
@@ -169,7 +184,7 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
             {selectedObject && (
                 <div className="bg-slate-900 text-slate-100 rounded-xl p-4 sm:p-5 shadow-inner space-y-4 relative">
                     <div className="flex justify-between items-center">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-blue-400">Netwerk Context Relaties</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-blue-400"> Relaties</h4>
                         <span className="text-[10px] text-slate-400 italic">Dubbelklik op een relatie om metadata/toelichting te wijzigen</span>
                     </div>
 
@@ -222,18 +237,18 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                                         className="text-xs py-1.5 text-slate-300 cursor-pointer hover:bg-slate-700/50 rounded px-1 transition-colors select-none group"
                                         title="Dubbelklik om te bewerken"
                                     >
-                                        {/* GEÏNTEGREERD: Hover over de ouder voor live meetwaarden */}
+                                        {/* Gegevens worden nu direct en betrouwbaar uit 'o' gelezen */}
                                         <NetworkHoverCard
-                                            objectId={o.vanObjectId || o.ouderId} // Afhankelijk van de key in je hierarchie-object (id van de ouder)
-                                            objectNaam={o.ouderNaam}
-                                            objectType={o.ouderType}
+                                            objectId={o.id}
+                                            objectNaam={o.weergaveNaam}
+                                            objectType={o.type}
                                         >
                                             <span className="font-bold text-white group-hover:text-blue-400 underline decoration-dotted decoration-slate-500 hover:decoration-blue-400">
-                                                {o.ouderNaam}
+                                                {o.weergaveNaam}
                                             </span>
                                         </NetworkHoverCard>
 
-                                        <span className="text-slate-400"> ({o.ouderType})</span>
+                                        <span className="text-slate-400"> ({o.type})</span>
                                         <span className="text-blue-400 block text-[10px]">↳ {o.relatieType} (volgorde: {o.volgorde})</span>
                                         {o.toelichting && <span className="block text-[10px] text-amber-400 italic font-mono">“{o.toelichting}”</span>}
                                     </div>
@@ -283,18 +298,18 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                                             title="Dubbelklik om te bewerken"
                                         >
                                             <div className="text-left flex-1">
-                                                {/* GEÏNTEGREERD: Hover over het kind voor live meetwaarden */}
+                                                {/* Gegevens worden nu direct en betrouwbaar uit 'k' gelezen */}
                                                 <NetworkHoverCard
-                                                    objectId={k.naarObjectId || k.kindId} // Afhankelijk van de key in je hierarchie-object (id van het kind)
-                                                    objectNaam={k.kindNaam}
-                                                    objectType={k.kindType}
+                                                    objectId={k.id}
+                                                    objectNaam={k.weergaveNaam}
+                                                    objectType={k.type}
                                                 >
                                                     <span className="font-bold text-white group-hover:text-blue-400 underline decoration-dotted decoration-slate-500 hover:decoration-blue-400">
-                                                        {k.kindNaam}
+                                                        {k.weergaveNaam}
                                                     </span>
                                                 </NetworkHoverCard>
 
-                                                <span className="text-slate-400"> ({k.kindType})</span>
+                                                <span className="text-slate-400"> ({k.type})</span>
                                                 <span className="text-slate-400 block text-[10px]">↳ {k.relatieType}</span>
                                                 {k.toelichting && <span className="block text-[10px] text-amber-400 italic font-mono">“{k.toelichting}”</span>}
                                             </div>
@@ -305,7 +320,7 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                                                     <span className="px-1 font-mono text-[11px] text-white font-bold min-w-4 text-center">{k.volgorde}</span>
                                                     <button onClick={async () => { await updateRelatieVolgordeAction(k.relatieId, k.volgorde + 1); getObjectHierarchie(selectedObject.id).then(setHierarchie); }} className="hover:bg-slate-600 text-blue-400 px-1 rounded font-bold text-[10px]">▼</button>
                                                 </div>
-                                                <button onClick={async () => { if (confirm(`Weet je zeker dat je de relatie met ${k.kindNaam} wilt verbreken?`)) { await terminateRelatieAction(k.relatieId); getObjectHierarchie(selectedObject.id).then(setHierarchie); } }} className="bg-red-950/50 hover:bg-red-900 border border-red-800 text-red-400 p-1.5 rounded text-[10px] font-bold transition-colors" title="Relatie beëindigen">✕</button>
+                                                <button onClick={async () => { if (confirm(`Weet je zeker dat je de relatie met ${k.weergaveNaam} wilt verbreken?`)) { await terminateRelatieAction(k.relatieId); getObjectHierarchie(selectedObject.id).then(setHierarchie); } }} className="bg-red-950/50 hover:bg-red-900 border border-red-800 text-red-400 p-1.5 rounded text-[10px] font-bold transition-colors" title="Relatie beëindigen">✕</button>
                                             </div>
                                         </div>
                                     ))}
@@ -319,7 +334,7 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
             {/* 3. LIST VIEW */}
             <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b pb-2">
-                    <h3 className="text-base font-bold text-slate-900">Geregistreerde Objecten <span className="text-xs font-normal text-slate-500">(Toont top 20)</span></h3>
+                    <h3 className="text-base font-bold text-slate-900">Geregistreerde Objecten <span className="text-xs font-normal text-slate-500">(Toont top 25)</span></h3>
                 </div>
 
                 <div className="bg-slate-100 p-3 rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
@@ -384,7 +399,7 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                     </div>
                 )}
             </div>
-            {/* ==================== ZIJSCHIRM / CONTEXT DRAWER ==================== */}
+            {/* ==================== ZIJSCHERM / CONTEXT DRAWER ==================== */}
             {/* Overlay achtergrond */}
             <div
                 className={`fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-40 transition-opacity duration-300 ${drawerObject ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
@@ -437,6 +452,93 @@ export default function ObjectenLijstEnForm({ objectTypen, initialObjecten }: Pr
                                 </div>
                             </div>
 
+                            {/* NIEUW: Sectie 1.5 - Taxonomische / Netwerk Context */}
+                            <div className="space-y-3 border-t border-slate-100 pt-4">
+                                <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">Taxonomie & Netwerk</h5>
+
+                                {/* Ouders (Volledige Ouderboom / Ancestors) */}
+                                <div className="space-y-1.5">
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase block tracking-wider">Taxonomische Lijn (Ouderboom)</span>
+                                    {drawerHierarchie.ouders.length === 0 ? (
+                                        <p className="text-xs italic text-slate-400 pl-1">Dit is een Top-level object (geen ouders).</p>
+                                    ) : (
+                                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 space-y-2">
+                                            {drawerHierarchie.ouders.map((ouder, index) => {
+                                                const isTaxon = ouder.type?.startsWith("taxon_");
+                                                return (
+                                                    <div key={ouder.id} className="flex flex-col">
+                                                        <div
+                                                            onClick={() => setDrawerObject(ouder)} // Vloeiend doorklikken IN de drawer!
+                                                            className="flex justify-between items-center hover:bg-blue-50/50 p-1.5 rounded cursor-pointer transition-all text-xs"
+                                                        >
+                                                            <span className="text-slate-700">
+                                                                <span className={isTaxon ? "italic font-semibold text-slate-900" : "font-semibold text-slate-900"}>
+                                                                    {ouder.weergaveNaam}
+                                                                </span>
+                                                                {ouder.nederlandseNaam && (
+                                                                    <span className="text-slate-500 font-normal"> - {ouder.nederlandseNaam}</span>
+                                                                )}
+                                                            </span>
+                                                            <span className="text-[10px] text-slate-400 bg-slate-200/60 px-1.5 py-0.5 rounded">
+                                                                {ouder.typeOmschrijving?.replace("Taxon: ", "") || ouder.type}
+                                                            </span>
+                                                        </div>
+
+                                                        {/* Verbindingspijltje tonen tussen de stappen van de boom */}
+                                                        <div className="text-slate-400 text-[10px] pl-4 font-mono font-bold">
+                                                            ↳ <span className="text-blue-500 italic font-normal text-[9px]">{ouder.relatieType}</span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+
+                                            {/* Het geopende object zelf als sluitstuk van de keten */}
+                                            <div className="p-1.5 bg-blue-50/50 border border-blue-100/50 rounded text-xs font-bold text-blue-900 flex justify-between">
+                                                <span>
+                                                    {drawerObject.weergaveNaam}
+                                                </span>
+                                                <span className="text-[9px] uppercase font-mono text-blue-500 font-bold">Dit Object</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Kinderen (Onderliggend) */}
+                                <div className="space-y-1.5">
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Directe Afstammelingen (Kinderen)</span>
+                                    {drawerHierarchie.kinderen.length === 0 ? (
+                                        <p className="text-xs italic text-slate-400 pl-1">Geen directe afstammelingen.</p>
+                                    ) : (
+                                        <ul className="space-y-1">
+                                            {drawerHierarchie.kinderen.map((kind) => {
+                                                const isTaxon = kind.type?.startsWith("taxon_");
+                                                return (
+                                                    <li
+                                                        key={kind.id}
+                                                        onClick={() => setDrawerObject(kind)} // Vloeiend doorklikken IN de drawer!
+                                                        className="p-2 rounded-lg bg-slate-50 border border-slate-100 hover:bg-blue-50/50 hover:border-blue-200 cursor-pointer transition-all text-xs flex justify-between items-center"
+                                                    >
+                                                        <span className="text-slate-700">
+                                                            <span className={isTaxon ? "italic font-semibold text-slate-900" : "font-semibold text-slate-900"}>
+                                                                {kind.weergaveNaam}
+                                                            </span>
+                                                            {kind.nederlandseNaam && (
+                                                                <span className="text-slate-500 font-normal"> - {kind.nederlandseNaam}</span>
+                                                            )}
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400 font-normal">
+                                                            {kind.typeOmschrijving?.replace("Taxon: ", "") || kind.type}
+                                                        </span>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Sectie 2: Recente Tijdlijn / Meetwaarden Historie */}
+                            {/* ... de rest van de bestaande code blijft hieronder ongewijzigd ... */}
                             {/* Sectie 2: Recente Tijdlijn / Meetwaarden Historie */}
                             <div className="space-y-3">
                                 <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">Recente Meetwaarden & Wijzigingen</h5>

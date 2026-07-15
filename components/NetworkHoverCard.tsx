@@ -17,16 +17,28 @@ export default function NetworkHoverCard({ objectId, objectNaam, objectType, chi
   const [metingen, setMetingen] = useState<any[]>([]);
   const [coords, setCoords] = useState({ x: 0, y: 0 });
 
+  // 1. Reset de metingen zodra het object ID verandert
+  useEffect(() => {
+    setMetingen([]);
+  }, [objectId]);
+
+  // 2. Haal data op als er gehoverd wordt en er nog geen metingen geladen zijn
   useEffect(() => {
     if (hovered && metingen.length === 0) {
       setLoading(true);
       getLaatsteMetingenVoorObject(objectId).then((data) => {
-        setMetingen(data);
+        setMetingen(data || []);
         setLoading(false);
       });
     }
   }, [hovered, objectId, metingen.length]);
 
+  // 3. OPTIONEEL/AANBEVOLEN: Schoon de data op als de muis het object verlaat
+  // Dit voorkomt dat je bij een snelle re-hover oude data flitst.
+  const handleMouseLeave = () => {
+    setHovered(false);
+    setMetingen([]); // Direct leegmaken bij verlaten
+  };
   const handleMouseMove = (e: React.MouseEvent) => {
     // Positioneer de pop-up 15 pixels rechtsonder de muiscursor
     setCoords({ x: e.clientX + 15, y: e.clientY + 15 });
@@ -35,7 +47,7 @@ export default function NetworkHoverCard({ objectId, objectNaam, objectType, chi
   return (
     <div
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={handleMouseLeave}
       onMouseMove={handleMouseMove}
       className="inline-block relative cursor-pointer"
     >
