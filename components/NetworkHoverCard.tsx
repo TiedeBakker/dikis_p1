@@ -86,7 +86,7 @@ export default function NetworkHoverCard({ objectId, objectNaam, objectType, chi
             ) : (
               metingen.map((m) => (
                 <div key={m.parameterId} className="flex justify-between items-start gap-2 py-0.5">
-                  <span className="text-slate-400 truncate max-w-[120px]" title={m.parameterNaam}>
+                  <span className="text-slate-400 truncate max-w-30" title={m.parameterNaam}>
                     {m.parameterNaam}
                   </span>
                   <div className="text-right">

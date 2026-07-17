@@ -4,7 +4,7 @@
 import { db } from "@/db";
 // Geüpdatet naar 'metingen' uit je schema
 import { metingen, parameterSetLijnen, parameterDefinities } from "@/db/schema";
-import { eq, asc, desc, and, inArray, lte } from "drizzle-orm";
+import { eq, asc, desc, and, inArray, lte, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 // 1. Haal de formulier-velden (parameters) op die bij een specifieke set horen
@@ -31,39 +31,67 @@ export async function getFormulierVeldenVoorSet(parameterSetId: string) {
 export async function createWaarnemingenAction(
   objectId: string,
   fieldsData: { parameterId: string; waarde: string }[],
-  handmatigTijdstip?: string // Derde optionele parameter toegevoegd
+  handmatigTijdstip?: string // Bestaande functionaliteit behouden!
 ) {
   if (!objectId || fieldsData.length === 0) {
     return { success: false, message: "Object en ingevulde velden zijn verplicht." };
   }
 
   try {
-    // Als er een handmatig tijdstip is meegegeven, converteren we dit naar UTC.
-    // Zo niet, dan gebruiken we de huidige tijd (fallback).
     const tijdstipUtc = handmatigTijdstip
       ? new Date(handmatigTijdstip).toISOString()
       : new Date().toISOString();
 
-    // Mapping naar de exacte tabel 'metingen' en kolom 'tijdstipUtc'
-    const insertValues = fieldsData
-      .filter(f => f.waarde !== undefined && f.waarde !== "")
-      .map(f => ({
-        objectId,
-        parameterId: f.parameterId,
-        waarde: f.waarde,
-        tijdstipUtc: tijdstipUtc, // Gebruikt nu het (historische) dynamische tijdstip
-        // ingevoerdDoorObjectId: ...
-      }));
+    // Filter lege invoer eruit zoals voorheen
+    const geldigeInvoer = fieldsData.filter(f => f.waarde !== undefined && f.waarde !== "");
 
-    if (insertValues.length === 0) {
+    if (geldigeInvoer.length === 0) {
       return { success: false, message: "Vul tenminste één waarde in." };
     }
 
-    // Insert in 'metingen'
-    await db.insert(metingen).values(insertValues);
+    // We gebruiken een transactie om te garanderen dat updates én inserts slagen of gezamenlijk falen
+    await db.transaction(async (tx) => {
+      for (const item of geldigeInvoer) {
+        
+        // A. Zoek de eventuele actieve meting (waar validUntil null is) voor deze specifieke parameter
+        const [actieveMeting] = await tx
+          .select()
+          .from(metingen)
+          .where(
+            and(
+              eq(metingen.objectId, objectId),
+              eq(metingen.parameterId, item.parameterId),
+              isNull(metingen.validUntil)
+            )
+          );
+
+        // B. Als er al een actieve meting is...
+        if (actieveMeting) {
+          // Als de waarde exact hetzelfde is, hoeven we niets te doen (optioneel, voorkomt dubbele history)
+          if (actieveMeting.waarde === item.waarde) {
+            continue; 
+          }
+
+          // Zet de 'validUntil' van de oude meting op het tijdstip van de nieuwe meting
+          await tx
+            .update(metingen)
+            .set({ validUntil: tijdstipUtc })
+            .where(eq(metingen.id, actieveMeting.id));
+        }
+
+        // C. Voeg de nieuwe meting toe
+        await tx.insert(metingen).values({
+          objectId,
+          parameterId: item.parameterId,
+          waarde: item.waarde,
+          tijdstipUtc: tijdstipUtc,
+          validUntil: null, // Start als de actieve waarde
+        });
+      }
+    });
 
     revalidatePath("/registratie");
-    return { success: true, message: `Succesvol ${insertValues.length} meting(en) geregistreerd!` };
+    return { success: true, message: `Succesvol meting(en) geregistreerd!` };
   } catch (error) {
     console.error("Fout bij opslaan metingen:", error);
     return { success: false, message: "Databasefout bij het opslaan van de metingen." };
@@ -218,8 +246,6 @@ export async function getLaatsteMetingenVoorObject(objectId: string) {
   if (!objectId) return [];
 
   try {
-    // We halen alle unieke metingen op, gesorteerd op tijdstip, 
-    // en filteren in de applicatie (of via SQL) op de nieuwste per parameter.
     const resultaten = await db
       .select({
         id: metingen.id,
@@ -229,21 +255,19 @@ export async function getLaatsteMetingenVoorObject(objectId: string) {
         tijdstipUtc: metingen.tijdstipUtc,
         eenheidId: parameterDefinities.eenheidId,
         dataType: parameterDefinities.dataType,
+        validUntil: metingen.validUntil // Handig om mee te sturen
       })
       .from(metingen)
       .innerJoin(parameterDefinities, eq(metingen.parameterId, parameterDefinities.id))
-      .where(eq(metingen.objectId, objectId))
+      .where(
+        and(
+          eq(metingen.objectId, objectId),
+          isNull(metingen.validUntil) // Alleen de actuele waarden ophalen
+        )
+      )
       .orderBy(desc(metingen.tijdstipUtc));
 
-    // Filter handmatig op de unieke laatste meting per parameterId
-    const uniekeLaatste: Record<string, typeof resultaten[number]> = {};
-    for (const r of resultaten) {
-      if (!uniekeLaatste[r.parameterId]) {
-        uniekeLaatste[r.parameterId] = r;
-      }
-    }
-
-    return Object.values(uniekeLaatste);
+    return resultaten;
   } catch (error) {
     console.error("Fout bij ophalen laatste metingen voor object:", error);
     return [];

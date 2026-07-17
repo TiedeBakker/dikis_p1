@@ -496,7 +496,7 @@ export default function RegistratieDashboard({ objecten, sets, alleParameters, i
                         {isRichText ? (
                           /* WYSIWYG Editor HTML veilig renderen op een donkere achtergrond */
                           <div
-                            className="prose prose-invert prose-xs max-w-none text-emerald-400 font-sans bg-emerald-950/30 px-2 py-1.5 rounded border border-emerald-900/40 overflow-hidden break-words text-left w-full"
+                            className="prose prose-invert prose-xs max-w-none text-emerald-400 font-sans bg-emerald-950/30 px-2 py-1.5 rounded border border-emerald-900/40 overflow-hidden wrap-break-word text-left w-full"
                             dangerouslySetInnerHTML={{ __html: h.waarde }}
                           />
                         ) : (

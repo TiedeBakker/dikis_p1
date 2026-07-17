@@ -70,7 +70,7 @@ export default function RichTextEditor({ value, onChange, placeholder = "Typ hie
         >
           S
         </button>
-        <div className="w-[1px] h-4 bg-slate-300 mx-1" />
+        <div className="w-px h-4 bg-slate-300 mx-1" />
         <button
           type="button"
           onClick={() => editor.chain().focus().toggleBulletList().run()}
@@ -98,7 +98,7 @@ export default function RichTextEditor({ value, onChange, placeholder = "Typ hie
         >
           Code
         </button>
-        <div className="w-[1px] h-4 bg-slate-300 mx-1" />
+        <div className="w-px h-4 bg-slate-300 mx-1" />
         <button
           type="button"
           onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()}

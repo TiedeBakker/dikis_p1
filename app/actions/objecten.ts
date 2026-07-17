@@ -2,7 +2,7 @@
 "use server";
 
 import { db } from "@/db";
-import {objecten, objectTypen, objectRelaties, relatieTypen, metingen } from "@/db/schema";
+import { objecten, objectTypen, objectRelaties, relatieTypen, metingen } from "@/db/schema";
 import { revalidatePath } from "next/cache";
 import { eq, and, asc, desc, like, isNull, or } from "drizzle-orm";
 import { aliasedTable } from "drizzle-orm"; // Zorg dat deze bovenin geïmporteerd staat
@@ -134,19 +134,27 @@ export async function createObjectRelatieAction(formData: FormData) {
     return { success: false, message: "Databasefout bij aanmaken relatie." };
   }
 }
-// 6. Update een bestaand object (Naam wijzigen)
+// 6. Update een bestaand object (Naam, type én optioneel createdAt wijzigen)
 export async function updateObjectAction(id: string, formData: FormData) {
   const weergaveNaam = formData.get("weergaveNaam") as string;
   const type = formData.get("type") as string;
+  const createdAt = formData.get("createdAt") as string; // <-- NIEUW: Optionele aanmaakdatum
 
   if (!weergaveNaam || !type) {
     return { success: false, message: "Naam en type zijn verplicht." };
   }
 
   try {
+    const updateValues: Record<string, any> = { weergaveNaam, type };
+
+    // Als er een geldige datum is meegegeven, updaten we deze ook
+    if (createdAt) {
+      updateValues.createdAt = new Date(createdAt).toISOString();
+    }
+
     await db
       .update(objecten)
-      .set({ weergaveNaam, type })
+      .set(updateValues)
       .where(eq(objecten.id, id));
 
     revalidatePath("/objecten");
@@ -156,7 +164,6 @@ export async function updateObjectAction(id: string, formData: FormData) {
     return { success: false, message: "Databasefout bij bijwerken." };
   }
 }
-
 // 7. Haal de actuele hiërarchie op (filter op validUntil is NULL)
 // PAS NU HIERARCHIE AAN (Zodat createdAt, validUntil en toelichting worden meegegeven)
 // app/actions/objecten.ts
@@ -179,7 +186,7 @@ export async function getObjectHierarchie(objectId: string) {
         createdAt: objectRelaties.createdAt,
         validUntil: objectRelaties.validUntil,
         toelichting: objectRelaties.toelichting,
-        
+
         // Gegevens van de ouder (uniforme keys voor de frontend)
         id: objecten.id,
         weergaveNaam: objecten.weergaveNaam,
@@ -215,7 +222,7 @@ export async function getObjectHierarchie(objectId: string) {
         createdAt: objectRelaties.createdAt,
         validUntil: objectRelaties.validUntil,
         toelichting: objectRelaties.toelichting,
-        
+
         // Gegevens van het kind (uniforme keys voor de frontend)
         id: objecten.id,
         weergaveNaam: objecten.weergaveNaam,
@@ -453,6 +460,10 @@ export async function getOuderBoom(objectId: string): Promise<any[]> {
  * Specifieke server action voor de Boom Navigator (Fase 1)
  * Haalt de stamboom (ouders met snoei-logica) en directe kinderen met indicators op.
  */
+/**
+ * Specifieke server action voor de Boom Navigator
+ * Haalt de stamboom en directe kinderen met indicators én createdAt op.
+ */
 export async function getBoomNavigatorData(objectId: string) {
   if (!objectId) return null;
 
@@ -464,6 +475,7 @@ export async function getBoomNavigatorData(objectId: string) {
         weergaveNaam: objecten.weergaveNaam,
         type: objecten.type,
         typeOmschrijving: objectTypen.omschrijving,
+        createdAt: objecten.createdAt, // <-- Zorg dat we dit hier ook hebben
       })
       .from(objecten)
       .leftJoin(objectTypen, eq(objecten.type, objectTypen.id))
@@ -473,9 +485,8 @@ export async function getBoomNavigatorData(objectId: string) {
     if (!centraal) return null;
 
     // 2. Recursieve helper om voorouders op te halen.
-    // 'levelsSinceSplit' houdt bij hoeveel generaties we boven een splitsing (>= 2 ouders) zitten.
     async function fetchAncestors(currentId: string, depth: number = 0, levelsSinceSplit: number = -1): Promise<any[]> {
-      if (depth > 8) return []; // Harde veiligheidslimiet tegen oneindige lussen
+      if (depth > 8) return [];
 
       const directParents = await db
         .select({
@@ -501,7 +512,7 @@ export async function getBoomNavigatorData(objectId: string) {
       
       let nextLevelsSinceSplit = levelsSinceSplit;
       if (isMultiParent && levelsSinceSplit === -1) {
-        nextLevelsSinceSplit = 0; // Splitsing begint hier!
+        nextLevelsSinceSplit = 0;
       } else if (levelsSinceSplit !== -1) {
         nextLevelsSinceSplit = levelsSinceSplit + 1;
       }
@@ -509,9 +520,6 @@ export async function getBoomNavigatorData(objectId: string) {
       const parentsWithAncestors = await Promise.all(
         directParents.map(async (parent) => {
           let ancestors: any[] = [];
-          
-          // Als we nog geen splitsing hebben gehad (-1) óf we zijn pas 1 niveau diep vanaf de splitsing (nextLevelsSinceSplit < 1),
-          // dan halen we de volgende generatie op (waardoor we max ouders & grootouders tonen vanaf de splitsing).
           const canContinue = nextLevelsSinceSplit === -1 || nextLevelsSinceSplit < 1;
           
           if (canContinue) {
@@ -540,6 +548,7 @@ export async function getBoomNavigatorData(objectId: string) {
         weergaveNaam: objecten.weergaveNaam,
         type: objecten.type,
         typeOmschrijving: objectTypen.omschrijving,
+        createdAt: objecten.createdAt, // <-- NIEUW: We halen createdAt van de kinderen op
       })
       .from(objectRelaties)
       .innerJoin(objecten, eq(objectRelaties.naarObjectId, objecten.id))
@@ -553,7 +562,6 @@ export async function getBoomNavigatorData(objectId: string) {
       )
       .orderBy(asc(objectRelaties.volgorde), asc(objecten.weergaveNaam));
 
-    // Voor elk kind controleren of er opvolgende generaties zijn
     const kinderenMetIndicator = await Promise.all(
       directeKinderen.map(async (kind) => {
         const [subKind] = await db
@@ -583,5 +591,137 @@ export async function getBoomNavigatorData(objectId: string) {
   } catch (error) {
     console.error("Fout bij ophalen boom navigator data:", error);
     return null;
+  }
+}
+
+// Voeg deze imports eventueel toe bovenin als ze er nog niet staan:
+// (objectRelaties) is al geïmporteerd op basis van je eerdere schema
+
+/**
+ * Koppelt een reeds bestaand object als kind aan een ouder-object
+ */
+export async function connectExistingChildAction(formData: FormData) {
+  const vanObjectId = formData.get("vanObjectId") as string; // De ouder (centraal)
+  const naarObjectId = formData.get("naarObjectId") as string; // Het bestaande kind
+  const relatieTypeId = formData.get("relatieTypeId") as string;
+  const volgordeStr = formData.get("volgorde") as string;
+  const volgorde = volgordeStr ? parseInt(volgordeStr, 10) : 0;
+
+  if (!vanObjectId || !naarObjectId || !relatieTypeId) {
+    return { success: false, message: "Ouder, kind en relatietype zijn verplichte velden." };
+  }
+
+  if (vanObjectId === naarObjectId) {
+    return { success: false, message: "Een object kan niet aan zichzelf gekoppeld worden." };
+  }
+
+  try {
+    // Controleer of de actieve relatie al bestaat om duplicaten te voorkomen
+    const bestaandeRelatie = await db
+      .select()
+      .from(objectRelaties)
+      .where(
+        and(
+          eq(objectRelaties.vanObjectId, vanObjectId),
+          eq(objectRelaties.naarObjectId, naarObjectId),
+          isNull(objectRelaties.validUntil)
+        )
+      )
+      .limit(1);
+
+    if (bestaandeRelatie.length > 0) {
+      return { success: false, message: "Dit object is al gekoppeld als kind van het centrale object." };
+    }
+
+    // Voeg de nieuwe relatie toe
+    await db.insert(objectRelaties).values({
+      vanObjectId,
+      naarObjectId,
+      relatieTypeId,
+      volgorde,
+    });
+
+    revalidatePath("/objecten");
+    return { success: true, message: "Bestaand object succesvol gekoppeld!" };
+  } catch (error) {
+    console.error("Fout bij koppelen bestaand object:", error);
+    return { success: false, message: "Databasefout bij het leggen van de relatie." };
+  }
+}
+/**
+ * Haalt ALLE (zowel actieve als inactieve) relaties op voor het mutatiescherm.
+ * Dit zorgt ervoor dat we historische mutaties ook kunnen inzien indien gewenst,
+ * al richten we ons in de actieve bewerklijst op de actuele relaties (validUntil is NULL).
+ */
+export async function getObjectRelatiesVoorMutatie(objectId: string) {
+  try {
+    // Haal de ouderrelaties op (waar dit object het kind is)
+    const ouders = await db
+      .select({
+        relatieId: objectRelaties.id,
+        vanObjectId: objectRelaties.vanObjectId,
+        naarObjectId: objectRelaties.naarObjectId,
+        relatieTypeId: objectRelaties.relatieTypeId,
+        volgorde: objectRelaties.volgorde,
+        createdAt: objectRelaties.createdAt,
+        validUntil: objectRelaties.validUntil,
+        weergaveNaam: objecten.weergaveNaam,
+        typeOmschrijving: objectTypen.omschrijving,
+      })
+      .from(objectRelaties)
+      .innerJoin(objecten, eq(objectRelaties.vanObjectId, objecten.id))
+      .leftJoin(objectTypen, eq(objecten.type, objectTypen.id))
+      .where(and(eq(objectRelaties.naarObjectId, objectId), isNull(objectRelaties.validUntil)))
+      .orderBy(asc(objectRelaties.volgorde));
+
+    // Haal de kindrelaties op (waar dit object de ouder is)
+    const kinderen = await db
+      .select({
+        relatieId: objectRelaties.id,
+        vanObjectId: objectRelaties.vanObjectId,
+        naarObjectId: objectRelaties.naarObjectId,
+        relatieTypeId: objectRelaties.relatieTypeId,
+        volgorde: objectRelaties.volgorde,
+        createdAt: objectRelaties.createdAt,
+        validUntil: objectRelaties.validUntil,
+        weergaveNaam: objecten.weergaveNaam,
+        typeOmschrijving: objectTypen.omschrijving,
+      })
+      .from(objectRelaties)
+      .innerJoin(objecten, eq(objectRelaties.naarObjectId, objecten.id))
+      .leftJoin(objectTypen, eq(objecten.type, objectTypen.id))
+      .where(and(eq(objectRelaties.vanObjectId, objectId), isNull(objectRelaties.validUntil)))
+      .orderBy(asc(objectRelaties.volgorde));
+
+    return { ouders, kinderen };
+  } catch (error) {
+    console.error("Fout bij ophalen mutatie-relaties:", error);
+    return { ouders: [], kinderen: [] };
+  }
+}
+
+/**
+ * Update een specifieke relatie direct vanuit de tabel (bijv. type, volgorde, of startdatum)
+ */
+export async function updateRelatieCoreAction(
+  relatieId: string, 
+  data: { relatieTypeId?: string; volgorde?: number; createdAt?: string }
+) {
+  try {
+    const updateValues: Record<string, any> = {};
+    if (data.relatieTypeId) updateValues.relatieTypeId = data.relatieTypeId;
+    if (data.volgorde !== undefined) updateValues.volgorde = data.volgorde;
+    if (data.createdAt) updateValues.createdAt = new Date(data.createdAt).toISOString();
+
+    await db
+      .update(objectRelaties)
+      .set(updateValues)
+      .where(eq(objectRelaties.id, relatieId));
+
+    revalidatePath("/objecten");
+    return { success: true, message: "Relatie succesvol bijgewerkt." };
+  } catch (error) {
+    console.error("Fout bij updaten relatie:", error);
+    return { success: false, message: "Databasefout bij bijwerken relatie." };
   }
 }

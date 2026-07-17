@@ -103,5 +103,6 @@ export const metingen = sqliteTable("metingen", {
   parameterId: text("parameter_id").notNull().references(() => parameterDefinities.id),
   waarde: text("waarde").notNull(),
   tijdstipUtc: text("tijdstip_utc").notNull(),
+  validUntil: text("valid_until"),
   ingevoerdDoorObjectId: text("ingevoerd_by_object_id").references(() => objecten.id), // NU HARD LINK NAAR EEN OBJECT (Inspecteur)
 });
