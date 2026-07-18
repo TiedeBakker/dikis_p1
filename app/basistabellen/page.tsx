@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { getBasistabellenData } from "@/app/actions/basistabellen";
 import { db } from "@/db";
 import { parameterDefinities } from "@/db/schema";

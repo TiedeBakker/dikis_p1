@@ -1,4 +1,5 @@
 // src/app/admin/seed/page.tsx
+export const dynamic = "force-dynamic";
 "use client";
 
 import { useState, useTransition } from "react";
