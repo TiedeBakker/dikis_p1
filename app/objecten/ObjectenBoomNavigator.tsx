@@ -67,6 +67,10 @@ export default function ObjectenBoomNavigator({ objectTypen, relatieTypen }: Pro
     const [selectedTabObject, setSelectedTabObject] = useState<any | null>(null);
     const [showTabDropdown, setShowTabDropdown] = useState(false);
 
+    const [extraParamZoekterm, setExtraParamZoekterm] = useState("");
+    const [showExtraParamDropdown, setShowExtraParamDropdown] = useState(false);
+    const extraParamDropdownRef = useRef<HTMLDivElement>(null);
+
     // State voor bewerken van een specifiek kind-object
     const [editingChild, setEditingChild] = useState<any | null>(null);
     const [childEditFeedback, setChildEditFeedback] = useState<{ success: boolean; message: string } | null>(null);
@@ -166,6 +170,9 @@ export default function ObjectenBoomNavigator({ objectTypen, relatieTypen }: Pro
             if (connectDropdownRef.current && !connectDropdownRef.current.contains(event.target as Node)) {
                 setShowConnectDropdown(false);
             }
+            if (extraParamDropdownRef.current && !extraParamDropdownRef.current.contains(event.target as Node)) {
+            setShowExtraParamDropdown(false);
+        }
         }
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -874,7 +881,7 @@ export default function ObjectenBoomNavigator({ objectTypen, relatieTypen }: Pro
 
                         <div className="flex justify-between items-center border-b pb-3 shrink-0">
                             <div>
-                                <h3 className="text-base font-bold text-slate-900">Centraal Object Beheren 123</h3>
+                                <h3 className="text-base font-bold text-slate-900">Centraal Object Beheren</h3>
                                 <p className="text-xs text-slate-500">ID: {boomData.centraal.id}</p>
                             </div>
                             <button
@@ -1241,49 +1248,84 @@ export default function ObjectenBoomNavigator({ objectTypen, relatieTypen }: Pro
                                         })()}
                                     </div>
 
-                                    {/* DEEL B: Handmatig een NIEUWE extra parameter selecteren en toevoegen aan de actieve sessie */}
+                                    {/* DEEL B: Handmatig een NIEUWE extra parameter zoeken en toevoegen met LIMIT */}
                                     <div className="bg-slate-100 border border-slate-200 p-3 rounded-lg">
                                         <h4 className="text-xs font-bold text-slate-800 uppercase mb-2">
                                             ➕ Extra parameter handmatig toevoegen aan dit object
                                         </h4>
                                         <div className="flex flex-col sm:flex-row gap-2 items-end">
-                                            <div className="flex-1 w-full">
-                                                <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Kies parameter uit de hoofdlijst</label>
-                                                <select
-                                                    id="extraParameterSelector"
-                                                    className="w-full text-xs rounded border border-slate-300 p-1.5 bg-white focus:outline-none h-9"
-                                                    defaultValue=""
+                                            <div className="flex-1 w-full relative" ref={extraParamDropdownRef}>
+                                                <label className="block text-[10px] font-bold text-slate-500 mb-0.5">
+                                                    Zoek parameter uit de hoofdlijst (max. 50 resultaten)
+                                                </label>
+
+                                                <input
+                                                    type="text"
+                                                    value={extraParamZoekterm}
                                                     onChange={(e) => {
-                                                        const gekozenId = e.target.value;
-                                                        if (!gekozenId) return;
-
-                                                        // Voeg de gekozen parameter direct toe aan de mutatie-state (met een lege string als startwaarde)
-                                                        setMutatieMetingen(prev => {
-                                                            if (prev[gekozenId] !== undefined) return prev; // Bestaat al
-                                                            return { ...prev, [gekozenId]: "" };
-                                                        });
-
-                                                        // Reset de dropdown naar de placeholder
-                                                        e.target.value = "";
+                                                        setExtraParamZoekterm(e.target.value);
+                                                        setShowExtraParamDropdown(true);
                                                     }}
-                                                >
-                                                    <option value="" disabled>-- Selecteer een parameter om direct toe te voegen --</option>
-                                                    {(() => {
-                                                        // Filter parameters die al getoond worden uit in de selectbox
-                                                        const actieveIds = new Set([
-                                                            ...formConfig.map(v => v.parameterId || v.parameter_id || v.id),
-                                                            ...Object.keys(mutatieMetingen)
-                                                        ]);
+                                                    onFocus={() => setShowExtraParamDropdown(true)}
+                                                    placeholder="Typ om te filteren op parameternaam of symbool..."
+                                                    className="w-full text-xs rounded border border-slate-300 p-1.5 bg-white focus:outline-none h-9 shadow-sm"
+                                                />
 
-                                                        return beschikbareParameters
-                                                            .filter(p => !actieveIds.has(p.id))
-                                                            .map(p => (
-                                                                <option key={p.id} value={p.id}>
-                                                                    {p.omschrijving || p.naam} {p.symbool ? `(${p.symbool})` : ""}
-                                                                </option>
+                                                {showExtraParamDropdown && (
+                                                    <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                                        {(() => {
+                                                            // 1. Haal de ID's op die al op het scherm staan
+                                                            const actieveIds = new Set([
+                                                                ...formConfig.map(v => v.parameterId || v.parameter_id || v.id),
+                                                                ...Object.keys(mutatieMetingen)
+                                                            ]);
+
+                                                            // 2. Filter op basis van actieve status EN de zoekterm (case-insensitive)
+                                                            const gefilterdeParameters = beschikbareParameters.filter(p => {
+                                                                if (actieveIds.has(p.id)) return false;
+
+                                                                const naam = (p.omschrijving || p.naam || "").toLowerCase();
+                                                                const symbool = (p.symbool || "").toLowerCase();
+                                                                const zoek = extraParamZoekterm.toLowerCase();
+
+                                                                return naam.includes(zoek) || symbool.includes(zoek);
+                                                            });
+
+                                                            // 3. Pas de LIMIT van 50 toe
+                                                            const gelimiteerdeParameters = gefilterdeParameters.slice(0, 50);
+
+                                                            if (gelimiteerdeParameters.length === 0) {
+                                                                return (
+                                                                    <div className="p-3 text-xs text-slate-400 italic text-center">
+                                                                        {extraParamZoekterm ? "Geen parameters gevonden" : "Geen extra parameters beschikbaar"}
+                                                                    </div>
+                                                                );
+                                                            }
+
+                                                            return gelimiteerdeParameters.map(p => (
+                                                                <button
+                                                                    key={p.id}
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        // Voeg toe aan mutatie state
+                                                                        setMutatieMetingen(prev => ({ ...prev, [p.id]: "" }));
+                                                                        // Reset de zoeker en sluit dropdown
+                                                                        setExtraParamZoekterm("");
+                                                                        setShowExtraParamDropdown(false);
+                                                                    }}
+                                                                    className="w-full text-left px-3 py-2 hover:bg-slate-100 text-xs text-slate-800 transition border-b border-slate-50 last:border-none flex justify-between items-center"
+                                                                >
+                                                                    <span className="font-medium">{p.omschrijving || p.naam}</span>
+                                                                    {p.symbool && (
+                                                                        <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">
+                                                                            {p.symbool}
+                                                                        </span>
+                                                                    )}
+                                                                </button>
                                                             ));
-                                                    })()}
-                                                </select>
+                                                        })()}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
