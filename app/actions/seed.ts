@@ -1,3 +1,5 @@
+
+export const dynamic = "force-dynamic";
 "use server";
 
 import { db } from "@/db"; // Jouw Drizzle db instantie

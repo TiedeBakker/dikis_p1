@@ -1,4 +1,5 @@
 // app/actions/importTaxonomy.ts
+export const dynamic = "force-dynamic";
 "use server";
 
 import { db } from "@/db"; // Jouw Drizzle/DB verbinding
